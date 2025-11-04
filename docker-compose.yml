@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: dotnet-postgres
+    environment:
+      POSTGRES_DB: ecommerce_db
+      POSTGRES_USER: ecommerce_user
+      POSTGRES_PASSWORD: ecommerce_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Infrastructure/Data/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - dotnet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for caching)
+  redis:
+    image: redis:7-alpine
+    container_name: dotnet-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - dotnet-network
+    volumes:
+      - redis_data:/data
+
+  # DotNet Backend
+  dotnet-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dotnet-backend
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=ecommerce_db;Username=ecommerce_user;Password=ecommerce_password;
+      - ConnectionStrings__Redis=redis:6379
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dotnet-network
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  dotnet-network:
+    driver: bridge
