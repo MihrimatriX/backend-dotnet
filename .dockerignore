@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/logs
+**/*.user
+**/*.db
+**/agent-tools
+**/.cursor
+**/temp-shop

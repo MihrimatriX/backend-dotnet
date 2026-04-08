@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+
+
+  <PropertyGroup>
+
+    <TargetFramework>net9.0</TargetFramework>
+
+    <Nullable>enable</Nullable>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**;tools/**</DefaultItemExcludes>
+
+  </PropertyGroup>
+
+
+
+  <ItemGroup>
+
+    <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
+
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.2" />
+
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
+
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
+
+
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+
+    <PackageReference Include="AspNetCore.HealthChecks.UI" Version="9.0.0" />
+
+    <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
+
+    <!-- Overrides transitive 15.0.1 from HealthChecks.UI (NU1902 / GHSA-w7r3-mgwf-4mqq) -->
+    <PackageReference Include="KubernetesClient" Version="19.0.2" />
+
+    <PackageReference Include="prometheus-net" Version="8.2.1" />
+
+    <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
+
+
+
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.0" />
+
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
+
+    <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
+
+
+
+    <!-- v9+ ticari lisans (MT_LICENSE) gerektirir; OSS/docker geliştirme için 8.x -->
+    <PackageReference Include="MassTransit" Version="8.5.8" />
+
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.8" />
+
+
+
+    <PackageReference Include="AspNetCoreRateLimit" Version="5.0.0" />
+
+
+
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+
+    <PackageReference Include="Serilog.Enrichers.Process" Version="3.0.0" />
+
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+
+  </ItemGroup>
+
+
+
+</Project>
+
