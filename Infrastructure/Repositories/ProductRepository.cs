@@ -13,55 +13,93 @@ namespace EcommerceBackend.Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Product>> GetAllAsync()
-        {
-            return await _context.Products
+        private IQueryable<Product> ActiveProducts =>
+            _context.Products
                 .Where(p => p.IsActive)
                 .Include(p => p.Category)
+                .Include(p => p.SubCategory);
+
+        public Task<Product?> GetActiveByIdAsync(int id) =>
+            ActiveProducts.FirstOrDefaultAsync(p => p.Id == id);
+
+        public Task<Product?> GetByIdAsync(int id) =>
+            _context.Products
+                .Include(p => p.Category)
+                .Include(p => p.SubCategory)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+        public async Task<IReadOnlyList<Product>> GetByCategoryAsync(int categoryId) =>
+            await ActiveProducts
+                .Where(p => p.CategoryId == categoryId)
+                .OrderBy(p => p.Id)
+                .AsNoTracking()
                 .ToListAsync();
+
+        public async Task<IReadOnlyList<Product>> SearchAsync(string searchTerm) =>
+            await ApplySearch(ActiveProducts, searchTerm)
+                .OrderBy(p => p.Id)
+                .AsNoTracking()
+                .ToListAsync();
+
+        public async Task<IReadOnlyList<Product>> GetFeaturedAsync(DateTime createdSince, int take) =>
+            await ActiveProducts
+                .Where(p => p.Discount > 20 || p.CreatedAt >= createdSince)
+                .OrderByDescending(p => p.CreatedAt)
+                .ThenByDescending(p => p.Id)
+                .Take(take)
+                .AsNoTracking()
+                .ToListAsync();
+
+        public async Task<IReadOnlyList<Product>> GetDiscountedAsync(int take) =>
+            await ActiveProducts
+                .Where(p => p.Discount > 0)
+                .OrderByDescending(p => p.Discount)
+                .ThenBy(p => p.Id)
+                .Take(take)
+                .AsNoTracking()
+                .ToListAsync();
+
+        public async Task<(IReadOnlyList<Product> Items, int TotalCount)> GetPageAsync(ProductQuery query)
+        {
+            var filtered = ActiveProducts;
+
+            if (query.CategoryId.HasValue)
+                filtered = filtered.Where(p => p.CategoryId == query.CategoryId);
+
+            if (query.SubCategoryId.HasValue)
+                filtered = filtered.Where(p => p.SubCategoryId == query.SubCategoryId);
+
+            if (query.MinPrice.HasValue)
+                filtered = filtered.Where(p => p.UnitPrice >= query.MinPrice);
+
+            if (query.MaxPrice.HasValue)
+                filtered = filtered.Where(p => p.UnitPrice <= query.MaxPrice);
+
+            if (!string.IsNullOrWhiteSpace(query.SearchTerm))
+                filtered = ApplySearch(filtered, query.SearchTerm);
+
+            var totalCount = await filtered.CountAsync();
+            var items = await ApplySort(filtered, query.SortBy, query.Descending)
+                .Skip(query.Skip)
+                .Take(query.Take)
+                .AsNoTracking()
+                .ToListAsync();
+
+            return (items, totalCount);
         }
 
-        public async Task<Product?> GetByIdAsync(int id)
+        public async Task<IReadOnlyDictionary<int, ProductRatingSummary>> GetRatingSummariesAsync(IReadOnlyCollection<int> productIds)
         {
-            return await _context.Products
-                .Where(p => p.IsActive && p.Id == id)
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync();
-        }
+            if (productIds.Count == 0)
+                return new Dictionary<int, ProductRatingSummary>();
 
-        public async Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId)
-        {
-            return await _context.Products
-                .Where(p => p.IsActive && p.CategoryId == categoryId)
-                .Include(p => p.Category)
+            var rows = await _context.Reviews
+                .Where(r => r.IsActive && productIds.Contains(r.ProductId))
+                .GroupBy(r => r.ProductId)
+                .Select(g => new { ProductId = g.Key, Average = g.Average(r => (double)r.Rating), Count = g.Count() })
                 .ToListAsync();
-        }
 
-        public async Task<IEnumerable<Product>> SearchAsync(string searchTerm)
-        {
-            var term = searchTerm.ToLower();
-            return await _context.Products
-                .Where(p => p.IsActive &&
-                    (p.ProductName.ToLower().Contains(term) ||
-                     (p.Description != null && p.Description.ToLower().Contains(term))))
-                .Include(p => p.Category)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Product>> GetFeaturedAsync()
-        {
-            return await _context.Products
-                .Where(p => p.IsActive && (p.Discount > 20 || p.CreatedAt > DateTime.UtcNow.AddDays(-7)))
-                .Include(p => p.Category)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Product>> GetDiscountedAsync()
-        {
-            return await _context.Products
-                .Where(p => p.IsActive && p.Discount > 0)
-                .Include(p => p.Category)
-                .ToListAsync();
+            return rows.ToDictionary(r => r.ProductId, r => new ProductRatingSummary(r.Average, r.Count));
         }
 
         public async Task<Product> CreateAsync(Product product)
@@ -71,98 +109,40 @@ namespace EcommerceBackend.Infrastructure.Repositories
             return product;
         }
 
-        public async Task<Product?> UpdateAsync(int id, Product product)
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
+
+        /// <summary>Ad veya açıklamada büyük/küçük harf duyarsız arama.</summary>
+        private static IQueryable<Product> ApplySearch(IQueryable<Product> query, string searchTerm)
         {
-            var existingProduct = await _context.Products.FindAsync(id);
-            if (existingProduct == null) return null;
-
-            existingProduct.ProductName = product.ProductName;
-            existingProduct.UnitPrice = product.UnitPrice;
-            existingProduct.UnitInStock = product.UnitInStock;
-            existingProduct.QuantityPerUnit = product.QuantityPerUnit;
-            existingProduct.CategoryId = product.CategoryId;
-            existingProduct.Description = product.Description;
-            existingProduct.ImageUrl = product.ImageUrl;
-            existingProduct.Discount = product.Discount;
-            existingProduct.IsActive = product.IsActive;
-            existingProduct.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return existingProduct;
+            var term = searchTerm.Trim().ToLower();
+            return query.Where(p => p.ProductName.ToLower().Contains(term)
+                || (p.Description != null && p.Description.ToLower().Contains(term)));
         }
 
-        public async Task<bool> DeleteAsync(int id)
+        /// <summary>
+        /// Sıralama anahtarları (harf duyarsız): <c>Id</c>, <c>ProductName/name</c>, <c>UnitPrice/price</c>,
+        /// <c>CreatedAt</c>, <c>Discount</c>, <c>UnitInStock/stock</c>; bilinmeyen → <c>Id</c>. Sayfalamanın kararlı olması
+        /// için ikincil anahtar her zaman Id'dir.
+        /// </summary>
+        private static IQueryable<Product> ApplySort(IQueryable<Product> query, string? sortBy, bool descending)
         {
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return false;
-
-            product.IsActive = false;
-            product.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        public async Task<IEnumerable<Product>> GetWithFiltersAsync(int? categoryId, decimal? minPrice, decimal? maxPrice, string? searchTerm, int page, int pageSize, string sortBy, string sortOrder)
-        {
-            var query = _context.Products
-                .Where(p => p.IsActive)
-                .Include(p => p.Category)
-                .AsQueryable();
-
-            if (categoryId.HasValue)
-                query = query.Where(p => p.CategoryId == categoryId);
-
-            if (minPrice.HasValue)
-                query = query.Where(p => p.UnitPrice >= minPrice);
-
-            if (maxPrice.HasValue)
-                query = query.Where(p => p.UnitPrice <= maxPrice);
-
-            if (!string.IsNullOrEmpty(searchTerm))
+            var ordered = (sortBy ?? string.Empty).Trim().ToLowerInvariant() switch
             {
-                var term = searchTerm.ToLower();
-                query = query.Where(p => p.ProductName.ToLower().Contains(term) ||
-                    (p.Description != null && p.Description.ToLower().Contains(term)));
-            }
-
-            // Sorting
-            query = sortBy.ToLower() switch
-            {
-                "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(p => p.ProductName) : query.OrderBy(p => p.ProductName),
-                "price" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(p => p.UnitPrice) : query.OrderBy(p => p.UnitPrice),
-                "createdat" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(p => p.CreatedAt) : query.OrderBy(p => p.CreatedAt),
-                _ => query.OrderBy(p => p.Id)
+                "productname" or "name" => Order(query, p => p.ProductName, descending),
+                "unitprice" or "price" => Order(query, p => p.UnitPrice, descending),
+                "createdat" => Order(query, p => p.CreatedAt, descending),
+                "discount" => Order(query, p => p.Discount, descending),
+                "unitinstock" or "stock" => Order(query, p => p.UnitInStock, descending),
+                _ => Order(query, p => p.Id, descending),
             };
 
-            return await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+            return descending ? ordered.ThenByDescending(p => p.Id) : ordered.ThenBy(p => p.Id);
         }
 
-        public async Task<int> GetTotalCountAsync(int? categoryId, decimal? minPrice, decimal? maxPrice, string? searchTerm)
-        {
-            var query = _context.Products
-                .Where(p => p.IsActive)
-                .AsQueryable();
-
-            if (categoryId.HasValue)
-                query = query.Where(p => p.CategoryId == categoryId);
-
-            if (minPrice.HasValue)
-                query = query.Where(p => p.UnitPrice >= minPrice);
-
-            if (maxPrice.HasValue)
-                query = query.Where(p => p.UnitPrice <= maxPrice);
-
-            if (!string.IsNullOrEmpty(searchTerm))
-            {
-                var term = searchTerm.ToLower();
-                query = query.Where(p => p.ProductName.ToLower().Contains(term) ||
-                    (p.Description != null && p.Description.ToLower().Contains(term)));
-            }
-
-            return await query.CountAsync();
-        }
+        private static IOrderedQueryable<Product> Order<TKey>(
+            IQueryable<Product> query,
+            System.Linq.Expressions.Expression<Func<Product, TKey>> key,
+            bool descending) =>
+            descending ? query.OrderByDescending(key) : query.OrderBy(key);
     }
 }

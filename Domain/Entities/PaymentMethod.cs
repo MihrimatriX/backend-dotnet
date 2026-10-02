@@ -15,9 +15,12 @@ namespace EcommerceBackend.Domain.Entities
         [StringLength(100, ErrorMessage = "Card holder name cannot exceed 100 characters")]
         public string CardHolderName { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Yalnızca maske saklanır: <c>**** **** **** 1111</c> (gerçek son 4 hane). Tam numara ve CVV saklanmaz.
+        /// </summary>
         [Required(ErrorMessage = "Card number is required")]
         [StringLength(128, ErrorMessage = "Card number cannot exceed 128 characters")]
-        public string CardNumber { get; set; } = string.Empty; // Stored hash (Base64); masked in API
+        public string CardNumber { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Expiry month is required")]
         [Range(1, 12, ErrorMessage = "Expiry month must be between 1 and 12")]
@@ -27,14 +30,12 @@ namespace EcommerceBackend.Domain.Entities
         [Range(2024, 2050, ErrorMessage = "Expiry year must be between 2024 and 2050")]
         public int ExpiryYear { get; set; }
 
-        [StringLength(128, ErrorMessage = "CVV cannot exceed 128 characters")]
-        public string? Cvv { get; set; } // Stored hash (Base64)
-
         [StringLength(100, ErrorMessage = "Bank name cannot exceed 100 characters")]
         public string? BankName { get; set; }
 
+        /// <summary>Yalnızca maske saklanır: <c>****1234</c>.</summary>
         [StringLength(128, ErrorMessage = "Account number cannot exceed 128 characters")]
-        public string? AccountNumber { get; set; } // Stored hash / masked in API
+        public string? AccountNumber { get; set; }
 
         [StringLength(100, ErrorMessage = "Account holder name cannot exceed 100 characters")]
         public string? AccountHolderName { get; set; }

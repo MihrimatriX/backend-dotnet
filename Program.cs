@@ -3,17 +3,16 @@ using EcommerceBackend.Infrastructure.Data;
 using EcommerceBackend.Infrastructure.Repositories;
 using EcommerceBackend.Application.Services;
 using EcommerceBackend.Application.Options;
+using EcommerceBackend.Application.Serialization;
 using EcommerceBackend.Infrastructure.DependencyInjection;
 using EcommerceBackend.Infrastructure.Middleware;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using EcommerceBackend.Infrastructure.Security;
+using EcommerceBackend.Infrastructure.Web;
 using Serilog;
 using Prometheus;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
-// using AspNetCoreRateLimit; // Temporarily disabled
+
 var builder = WebApplication.CreateBuilder(args);
 var isSeedDemoForceCmd = args.Any(a => string.Equals(a, "seed-demo-force", StringComparison.OrdinalIgnoreCase));
 var runDemoSeedOnly = isSeedDemoForceCmd
@@ -40,7 +39,9 @@ builder.Host.UseSerilog();
 
 // Add services to the container.
 builder.Services.AddControllers()
-    .AddApplicationPart(typeof(EcommerceBackend.Infrastructure.Web.Controllers.ProductController).Assembly);
+    .AddApplicationPart(typeof(EcommerceBackend.Infrastructure.Web.Controllers.ProductController).Assembly)
+    .AddJsonOptions(options => ApiJson.Configure(options.JsonSerializerOptions))
+    .ConfigureApiBehavior();
 builder.Services.AddEndpointsApiExplorer();
 
 // Enhanced Swagger configuration
@@ -50,7 +51,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "E-Commerce API",
         Version = "v1.0.0",
-        Description = "E-ticaret REST API: PostgreSQL/SQLite, Redis katalog önbelleği, RabbitMQ (MassTransit) ile sipariş olayları, JWT, Prometheus metrikleri.",
+        Description = "E-ticaret REST API: PostgreSQL/SQLite, Redis katalog önbelleği, RabbitMQ (MassTransit) ile sipariş olayları, JWT, Prometheus metrikleri. Sözleşme: docs/API_CONTRACT.md",
         Contact = new OpenApiContact
         {
             Name = "AFU",
@@ -109,6 +110,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddMemoryCache();
 
 builder.Services.Configure<CheckoutOptions>(builder.Configuration.GetSection(CheckoutOptions.SectionName));
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddScoped<ICheckoutPaymentSimulator, CheckoutPaymentSimulator>();
 
 builder.Services.AddEcommerceInfrastructure(builder.Configuration);
@@ -127,23 +130,10 @@ builder.Services.AddHealthChecksUI(options =>
     options.AddHealthCheckEndpoint("E-Commerce API", "/api/health");
 }).AddInMemoryStorage();
 
-// Rate Limiting (temporarily disabled due to IMemoryCache dependency issue)
-// builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("RateLimit"));
-// builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
-// builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
-// builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
-// builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
-
 // Repositories
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
-builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<ICampaignRepository, CampaignRepository>();
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
-builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 builder.Services.AddScoped<IFavoriteRepository, FavoriteRepository>();
-builder.Services.AddScoped<IAddressRepository, AddressRepository>();
-builder.Services.AddScoped<IPaymentMethodRepository, PaymentMethodRepository>();
 
 // Services
 builder.Services.AddScoped<IProductService, ProductService>();
@@ -162,50 +152,22 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<ICampaignService, CampaignService>();
-builder.Services.AddScoped<IMetricsService, MetricsService>();
 
-
-// CORS
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
-var corsMethods = builder.Configuration.GetSection("Cors:AllowedMethods").Get<string[]>() ?? new[] { "GET", "POST", "PUT", "DELETE", "OPTIONS" };
-var corsHeaders = builder.Configuration.GetSection("Cors:AllowedHeaders").Get<string[]>() ?? new[] { "*" };
-var allowCredentials = builder.Configuration.GetValue<bool>("Cors:AllowCredentials", true);
-
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowReactApp", policy =>
-    {
-        policy.WithOrigins(corsOrigins)
-              .WithMethods(corsMethods)
-              .WithHeaders(corsHeaders);
-
-        if (allowCredentials)
-        {
-            policy.AllowCredentials();
-        }
-    });
-});
-
-// Authentication
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "default-key"))
-        };
-    });
+// HTTP: CORS, hız limiti, JWT (§1.4, §2)
+builder.Services.AddApiCors(builder.Configuration);
+builder.Services.AddApiRateLimiting(builder.Configuration);
+builder.Services.AddApiJwtAuthentication(
+    builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions());
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseCorrelationId();
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseGlobalExceptionMiddleware();
+app.UseApiStatusCodeEnvelopes();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -221,47 +183,29 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.UseRouting();
+
 // Prometheus metrics
 app.UseHttpMetrics();
 
-// Security headers
-app.UseMiddleware<SecurityHeadersMiddleware>();
-
-// Korelasyon (Serilog LogContext + X-Correlation-Id)
-app.UseCorrelationId();
-
-// Request logging
-app.UseMiddleware<RequestLoggingMiddleware>();
-
-// Rate limiting (temporarily disabled)
-// app.UseIpRateLimiting();
-
 // app.UseHttpsRedirection(); // Disabled for Docker
-app.UseCors("AllowReactApp");
-
-// Middleware
-app.UseGlobalExceptionMiddleware();
-app.UseValidationMiddleware();
+app.UseCors(ApiWebSetup.CorsPolicyName);
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Health checks
-app.MapHealthChecks("/api/health");
 app.MapHealthChecksUI(options =>
 {
     options.UIPath = "/health-ui";
-    // options.AddCustomStylesheet("health-ui.css"); // CSS file not found, disabled
 });
 
-// Map controllers
 app.MapControllers();
 
-// Add a simple health check endpoint
 app.MapGet("/", () => "E-Commerce API is running!");
 app.MapGet("/health", () => "OK");
-app.MapGet("/actuator/health", () => "OK");
-app.MapGet("/actuator/prometheus", () => "OK");
+app.MapGet("/actuator/health", () => Results.Json(new { status = "UP" }));
+app.MapMetrics("/actuator/prometheus");
 
 await using (var scope = app.Services.CreateAsyncScope())
 {

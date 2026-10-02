@@ -53,7 +53,8 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.CategoryId).HasColumnName("category_id");
                 entity.Property(e => e.SubCategoryId).HasColumnName("sub_category_id");
                 entity.Property(e => e.ImageUrl).HasColumnName("image_url");
-                entity.Property(e => e.UnitInStock).HasColumnName("unit_in_stock");
+                // İyimser kilit (§5.2): eşzamanlı stok güncellemesinde DbUpdateConcurrencyException → 409 CONFLICT.
+                entity.Property(e => e.UnitInStock).HasColumnName("unit_in_stock").IsConcurrencyToken();
 
                 entity.HasOne(e => e.Category)
                     .WithMany(c => c.Products)
@@ -144,7 +145,8 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
-                // entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at"); // Column doesn't exist in database
+                entity.Property(e => e.TokensRevokedAt).HasColumnName("tokens_revoked_at");
+                entity.Property(e => e.RevokeExceptJti).HasMaxLength(64).HasColumnName("revoke_except_jti");
 
                 entity.HasIndex(e => e.Email).IsUnique();
             });
@@ -192,6 +194,13 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.UserId).HasColumnName("user_id");
+                entity.Property(e => e.IdempotencyKey).HasMaxLength(128).HasColumnName("idempotency_key");
+                entity.Property(e => e.TrackingNumber).HasMaxLength(50).HasColumnName("tracking_number");
+                entity.Property(e => e.Carrier).HasMaxLength(100).HasColumnName("carrier");
+                entity.Property(e => e.EstimatedDeliveryAt).HasColumnName("estimated_delivery_at");
+                entity.Property(e => e.CancelReason).HasMaxLength(500).HasColumnName("cancel_reason");
+                entity.Property(e => e.ReturnReason).HasMaxLength(500).HasColumnName("return_reason");
+                entity.Property(e => e.ReturnRequestedAt).HasColumnName("return_requested_at");
 
                 // Ignore navigation properties that are not mapped to database
                 entity.Ignore(e => e.ShippingAddress);
@@ -203,6 +212,7 @@ namespace EcommerceBackend.Infrastructure.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => e.OrderNumber).IsUnique();
+                entity.HasIndex(e => new { e.UserId, e.IdempotencyKey }).IsUnique();
             });
 
             // OrderItem configuration
@@ -293,7 +303,6 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.CardNumber).IsRequired().HasMaxLength(128).HasColumnName("card_number");
                 entity.Property(e => e.ExpiryMonth).IsRequired().HasColumnName("expiry_month");
                 entity.Property(e => e.ExpiryYear).IsRequired().HasColumnName("expiry_year");
-                entity.Property(e => e.Cvv).HasMaxLength(128).HasColumnName("cvv");
                 entity.Property(e => e.BankName).HasMaxLength(100).HasColumnName("bank_name");
                 entity.Property(e => e.AccountNumber).HasMaxLength(128).HasColumnName("account_number");
                 entity.Property(e => e.AccountHolderName).HasMaxLength(100).HasColumnName("account_holder_name");

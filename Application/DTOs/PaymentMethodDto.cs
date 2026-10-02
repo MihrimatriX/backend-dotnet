@@ -8,11 +8,13 @@ namespace EcommerceBackend.Application.DTOs
         public int UserId { get; set; }
         public string Type { get; set; } = string.Empty;
         public string CardHolderName { get; set; } = string.Empty;
-        public string CardNumber { get; set; } = string.Empty; // Masked
+        /// <summary>Her zaman maskeli: <c>**** **** **** 1111</c>.</summary>
+        public string CardNumber { get; set; } = string.Empty;
         public int ExpiryMonth { get; set; }
         public int ExpiryYear { get; set; }
         public string? BankName { get; set; }
-        public string? AccountNumber { get; set; } // Masked
+        /// <summary>Maskeli: <c>****1234</c>.</summary>
+        public string? AccountNumber { get; set; }
         public string? AccountHolderName { get; set; }
         public bool IsDefault { get; set; }
         public bool IsActive { get; set; }
@@ -30,6 +32,7 @@ namespace EcommerceBackend.Application.DTOs
         [StringLength(100, ErrorMessage = "Card holder name cannot exceed 100 characters")]
         public string CardHolderName { get; set; } = string.Empty;
 
+        /// <summary>Boşluk/tire temizlendikten sonra 12–19 rakam (servis kuralı: <c>INVALID_CARD_NUMBER</c>).</summary>
         [Required(ErrorMessage = "Card number is required")]
         [StringLength(20, ErrorMessage = "Card number cannot exceed 20 characters")]
         public string CardNumber { get; set; } = string.Empty;
@@ -42,6 +45,7 @@ namespace EcommerceBackend.Application.DTOs
         [Range(2024, 2050, ErrorMessage = "Expiry year must be between 2024 and 2050")]
         public int ExpiryYear { get; set; }
 
+        /// <summary>Kabul edilir ama saklanmaz.</summary>
         [StringLength(10, ErrorMessage = "CVV cannot exceed 10 characters")]
         public string? Cvv { get; set; }
 
@@ -67,6 +71,7 @@ namespace EcommerceBackend.Application.DTOs
         [StringLength(100, ErrorMessage = "Card holder name cannot exceed 100 characters")]
         public string CardHolderName { get; set; } = string.Empty;
 
+        /// <summary>Boşluk/tire temizlendikten sonra 12–19 rakam (servis kuralı: <c>INVALID_CARD_NUMBER</c>).</summary>
         [Required(ErrorMessage = "Card number is required")]
         [StringLength(20, ErrorMessage = "Card number cannot exceed 20 characters")]
         public string CardNumber { get; set; } = string.Empty;
@@ -79,6 +84,7 @@ namespace EcommerceBackend.Application.DTOs
         [Range(2024, 2050, ErrorMessage = "Expiry year must be between 2024 and 2050")]
         public int ExpiryYear { get; set; }
 
+        /// <summary>Kabul edilir ama saklanmaz.</summary>
         [StringLength(10, ErrorMessage = "CVV cannot exceed 10 characters")]
         public string? Cvv { get; set; }
 

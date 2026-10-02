@@ -1,141 +1,132 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
+using EcommerceBackend.Application.Options;
 using EcommerceBackend.Domain.Entities;
-using EcommerceBackend.Infrastructure.Repositories;
-using Microsoft.Extensions.Configuration;
-using System.Security.Cryptography;
-using System.Text;
+using EcommerceBackend.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace EcommerceBackend.Application.Services
 {
     public class AuthService : IAuthService
     {
-        private readonly IUserRepository _userRepository;
+        private const string InvalidCredentialsMessage = "Invalid email or password";
+
+        private readonly ApplicationDbContext _context;
         private readonly IJwtService _jwtService;
-        private readonly IConfiguration _configuration;
+        private readonly AuthOptions _authOptions;
 
-        public AuthService(IUserRepository userRepository, IJwtService jwtService, IConfiguration configuration)
+        public AuthService(ApplicationDbContext context, IJwtService jwtService, IOptions<AuthOptions> authOptions)
         {
-            _userRepository = userRepository;
+            _context = context;
             _jwtService = jwtService;
-            _configuration = configuration;
+            _authOptions = authOptions.Value;
         }
 
-        private string ResolveRoleForUser(string email)
+        /// <summary>E-postalar kırpılıp küçük harfe çevrilerek saklanır ve karşılaştırılır (§2).</summary>
+        public static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+        public async Task<BaseResponseDto<AuthResponseDto>> LoginAsync(LoginRequestDto loginRequest, ClientInfo client)
         {
-            var admins = _configuration.GetSection("Auth:AdminEmails").Get<string[]>();
-            if (admins is { Length: > 0 })
+            var email = NormalizeEmail(loginRequest.Email);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+            if (user == null)
+                return InvalidCredentials();
+
+            if (!user.IsActive || !VerifyPassword(loginRequest.Password, user.Password))
             {
-                foreach (var a in admins)
-                {
-                    if (!string.IsNullOrWhiteSpace(a) && string.Equals(a.Trim(), email, StringComparison.OrdinalIgnoreCase))
-                        return "Admin";
-                }
+                RecordLogin(user.Id, client, failureReason: user.IsActive ? "Invalid password" : "Inactive account");
+                await _context.SaveChangesAsync();
+                return InvalidCredentials();
             }
-            else if (string.Equals(email, "admin@example.com", StringComparison.OrdinalIgnoreCase))
-                return "Admin";
 
-            return "User";
-        }
+            RecordLogin(user.Id, client, failureReason: null);
+            await _context.SaveChangesAsync();
 
-        public async Task<BaseResponseDto<AuthResponseDto>> LoginAsync(LoginRequestDto loginRequest)
-        {
-            try
-            {
-                var user = await _userRepository.GetByEmailAsync(loginRequest.Email);
-                if (user == null)
-                {
-                    return BaseResponseDto<AuthResponseDto>.ErrorResult("Invalid email or password");
-                }
-
-                if (!VerifyPassword(loginRequest.Password, user.Password))
-                {
-                    return BaseResponseDto<AuthResponseDto>.ErrorResult("Invalid email or password");
-                }
-
-                var token = _jwtService.GenerateToken(user.Email, user.Id, ResolveRoleForUser(user.Email));
-
-                var authResponse = new AuthResponseDto
-                {
-                    Token = token,
-                    UserId = user.Id,
-                    Email = user.Email,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                    IsEmailVerified = user.IsEmailVerified
-                };
-
-                return BaseResponseDto<AuthResponseDto>.SuccessResult("Login successful", authResponse);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<AuthResponseDto>.ErrorResult($"Login failed: {ex.Message}");
-            }
+            return BaseResponseDto<AuthResponseDto>.SuccessResult("Login successful", CreateAuthResponse(user));
         }
 
         public async Task<BaseResponseDto<AuthResponseDto>> RegisterAsync(RegisterRequestDto registerRequest)
         {
-            try
+            var email = NormalizeEmail(registerRequest.Email);
+            if (await _context.Users.AnyAsync(u => u.Email.ToLower() == email))
+                return BaseResponseDto<AuthResponseDto>.Fail("Email is already taken", ErrorCodes.EmailTaken, 409);
+
+            var user = new User
             {
-                if (await _userRepository.ExistsByEmailAsync(registerRequest.Email))
-                {
-                    return BaseResponseDto<AuthResponseDto>.ErrorResult("Email is already taken");
-                }
+                Email = email,
+                Password = HashPassword(registerRequest.Password),
+                FirstName = registerRequest.FirstName.Trim(),
+                LastName = registerRequest.LastName.Trim(),
+                PhoneNumber = registerRequest.PhoneNumber,
+                Address = registerRequest.Address,
+                City = registerRequest.City,
+                PostalCode = registerRequest.PostalCode,
+                IsEmailVerified = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
 
-                var user = new User
-                {
-                    Email = registerRequest.Email,
-                    Password = HashPassword(registerRequest.Password),
-                    FirstName = registerRequest.FirstName,
-                    LastName = registerRequest.LastName,
-                    PhoneNumber = registerRequest.PhoneNumber,
-                    Address = registerRequest.Address,
-                    City = registerRequest.City,
-                    PostalCode = registerRequest.PostalCode,
-                    IsEmailVerified = false,
-                    IsActive = true
-                };
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
 
-                var createdUser = await _userRepository.CreateAsync(user);
-                var token = _jwtService.GenerateToken(createdUser.Email, createdUser.Id, "User");
-
-                var authResponse = new AuthResponseDto
-                {
-                    Token = token,
-                    UserId = createdUser.Id,
-                    Email = createdUser.Email,
-                    FirstName = createdUser.FirstName,
-                    LastName = createdUser.LastName,
-                    IsEmailVerified = createdUser.IsEmailVerified
-                };
-
-                return BaseResponseDto<AuthResponseDto>.SuccessResult("User registered successfully", authResponse);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<AuthResponseDto>.ErrorResult($"Registration failed: {ex.Message}");
-            }
+            return BaseResponseDto<AuthResponseDto>.SuccessResult("User registered successfully", CreateAuthResponse(user));
         }
 
         public Task<BaseResponseDto<string>> LogoutAsync()
         {
-            // JWT is stateless, so logout is handled on client side
+            // JWT durumsuz; istemci token'ı siler. Tüm cihazlardan çıkış için /api/security/logout-all-devices.
             return Task.FromResult(BaseResponseDto<string>.SuccessResult("User logged out successfully", "Logout successful"));
         }
 
-        private string HashPassword(string password)
+        private AuthResponseDto CreateAuthResponse(User user)
         {
-            return BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(10));
+            var role = _authOptions.ResolveRole(NormalizeEmail(user.Email));
+            return new AuthResponseDto
+            {
+                Token = _jwtService.GenerateToken(user.Email, user.Id, role),
+                UserId = user.Id,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                IsEmailVerified = user.IsEmailVerified,
+                Role = role,
+            };
         }
 
-        private bool VerifyPassword(string password, string hashedPassword)
+        private static BaseResponseDto<AuthResponseDto> InvalidCredentials() =>
+            BaseResponseDto<AuthResponseDto>.Fail(InvalidCredentialsMessage, ErrorCodes.InvalidCredentials, 401);
+
+        private void RecordLogin(int userId, ClientInfo client, string? failureReason)
+        {
+            _context.LoginHistories.Add(new LoginHistory
+            {
+                UserId = userId,
+                LoginAt = DateTime.UtcNow,
+                IpAddress = Truncate(client.IpAddress, 45),
+                UserAgent = Truncate(client.UserAgent, 500),
+                IsSuccessful = failureReason == null,
+                FailureReason = failureReason,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+        }
+
+        private static string? Truncate(string? value, int maxLength) =>
+            string.IsNullOrEmpty(value) || value.Length <= maxLength ? value : value[..maxLength];
+
+        public static string HashPassword(string password) =>
+            BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(10));
+
+        public static bool VerifyPassword(string password, string hashedPassword)
         {
             try
             {
                 return BCrypt.Net.BCrypt.Verify(password, hashedPassword);
             }
-            catch (Exception ex)
+            catch (BCrypt.Net.SaltParseException)
             {
-                Console.WriteLine($"Password verification error: {ex.Message}");
                 return false;
             }
         }

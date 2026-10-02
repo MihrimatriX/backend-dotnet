@@ -36,6 +36,8 @@ namespace EcommerceBackend.Application.DTOs
         public string? Description { get; set; }
 
         public string? ImageUrl { get; set; }
-        public bool IsActive { get; set; }
+
+        /// <summary>Gönderilmezse (null) değişmez.</summary>
+        public bool? IsActive { get; set; }
     }
 }
