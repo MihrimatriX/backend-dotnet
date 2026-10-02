@@ -1,13 +1,13 @@
 using EcommerceBackend.Application.DTOs;
+using EcommerceBackend.Application.Options;
 using EcommerceBackend.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EcommerceBackend.Infrastructure.Web.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
-    public class ProductController : ControllerBase
+    public class ProductController : ApiControllerBase
     {
         private readonly IProductService _productService;
 
@@ -19,6 +19,7 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
         [HttpGet]
         public async Task<ActionResult<BaseResponseDto<PagedResultDto<ProductDto>>>> GetProducts(
             [FromQuery] int? categoryId,
+            [FromQuery] int? subCategoryId,
             [FromQuery] decimal? minPrice,
             [FromQuery] decimal? maxPrice,
             [FromQuery] string? searchTerm,
@@ -30,6 +31,7 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
             var filterDto = new ProductFilterDto
             {
                 CategoryId = categoryId,
+                SubCategoryId = subCategoryId,
                 MinPrice = minPrice,
                 MaxPrice = maxPrice,
                 SearchTerm = searchTerm,
@@ -39,100 +41,42 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
                 PageSize = pageSize
             };
 
-            var result = await _productService.GetProductsAsync(filterDto);
-            return Ok(result);
+            return Respond(await _productService.GetProductsAsync(filterDto));
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<BaseResponseDto<ProductDto>>> GetProduct(int id)
-        {
-            var result = await _productService.GetProductByIdAsync(id);
-
-            if (!result.Success)
-            {
-                return NotFound(result);
-            }
-
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<ProductDto>>> GetProduct(int id) =>
+            Respond(await _productService.GetProductByIdAsync(id));
 
         [HttpGet("category/{categoryId}")]
-        public async Task<ActionResult<BaseResponseDto<IEnumerable<ProductDto>>>> GetProductsByCategory(int categoryId)
-        {
-            var result = await _productService.GetProductsByCategoryAsync(categoryId);
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<List<ProductDto>>>> GetProductsByCategory(int categoryId) =>
+            Respond(await _productService.GetProductsByCategoryAsync(categoryId));
 
         [HttpGet("search")]
-        public async Task<ActionResult<BaseResponseDto<IEnumerable<ProductDto>>>> SearchProducts([FromQuery] string q)
-        {
-            var result = await _productService.SearchProductsAsync(q);
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<List<ProductDto>>>> SearchProducts([FromQuery] string q) =>
+            Respond(await _productService.SearchProductsAsync(q));
 
         [HttpGet("featured")]
-        public async Task<ActionResult<BaseResponseDto<IEnumerable<ProductDto>>>> GetFeaturedProducts()
-        {
-            var result = await _productService.GetFeaturedProductsAsync();
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<List<ProductDto>>>> GetFeaturedProducts() =>
+            Respond(await _productService.GetFeaturedProductsAsync());
 
         [HttpGet("discounted")]
-        public async Task<ActionResult<BaseResponseDto<IEnumerable<ProductDto>>>> GetDiscountedProducts()
-        {
-            var result = await _productService.GetDiscountedProductsAsync();
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<List<ProductDto>>>> GetDiscountedProducts() =>
+            Respond(await _productService.GetDiscountedProductsAsync());
 
         [HttpPost]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<BaseResponseDto<ProductDto>>> CreateProduct([FromBody] ProductDto productDto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var result = await _productService.CreateProductAsync(productDto);
-
-            if (!result.Success)
-            {
-                return BadRequest(result);
-            }
-
-            return CreatedAtAction(nameof(GetProduct), new { id = result.Data!.Id }, result);
-        }
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<ActionResult<BaseResponseDto<ProductDto>>> CreateProduct([FromBody] ProductDto productDto) =>
+            RespondCreated(await _productService.CreateProductAsync(productDto));
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<BaseResponseDto<ProductDto>>> UpdateProduct(int id, [FromBody] ProductDto productDto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var result = await _productService.UpdateProductAsync(id, productDto);
-
-            if (!result.Success)
-            {
-                return BadRequest(result);
-            }
-
-            return Ok(result);
-        }
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<ActionResult<BaseResponseDto<ProductDto>>> UpdateProduct(int id, [FromBody] ProductDto productDto) =>
+            Respond(await _productService.UpdateProductAsync(id, productDto));
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<BaseResponseDto<string>>> DeleteProduct(int id)
-        {
-            var result = await _productService.DeleteProductAsync(id);
-
-            if (!result.Success)
-            {
-                return NotFound(result);
-            }
-
-            return Ok(result);
-        }
+        [Authorize(Roles = UserRoles.Admin)]
+        public async Task<ActionResult<BaseResponseDto<string>>> DeleteProduct(int id) =>
+            Respond(await _productService.DeleteProductAsync(id));
     }
 }

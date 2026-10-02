@@ -32,7 +32,15 @@ namespace EcommerceBackend.Domain.Entities
 
         public bool IsEmailVerified { get; set; } = false;
 
-        // public DateTime? LastLoginAt { get; set; } // Column doesn't exist in database
+        /// <summary>
+        /// <c>logout-all-devices</c> zamanı (UTC, saniye hassasiyetinde). <c>iat</c> değeri buna eşit veya daha eski
+        /// token'lar (<see cref="RevokeExceptJti"/> hariç) reddedilir (§5.6).
+        /// </summary>
+        public DateTime? TokensRevokedAt { get; set; }
+
+        /// <summary>İptali yapan token'ın <c>jti</c> değeri; bu token geçerli kalır.</summary>
+        [StringLength(64)]
+        public string? RevokeExceptJti { get; set; }
 
         // Navigation properties
         public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();

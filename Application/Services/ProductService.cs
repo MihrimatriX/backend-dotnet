@@ -1,286 +1,234 @@
 using EcommerceBackend.Application.Abstractions.Caching;
 using EcommerceBackend.Application.Catalog;
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Application.Options;
 using EcommerceBackend.Domain.Entities;
+using EcommerceBackend.Infrastructure.Data;
 using EcommerceBackend.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace EcommerceBackend.Application.Services
 {
     public class ProductService : IProductService
     {
+        /// <summary>Vitrin listeleri (öne çıkan / indirimli) en fazla bu kadar ürün döner (§4.2).</summary>
+        private const int ShowcaseLimit = 20;
+
         private readonly IProductRepository _productRepository;
-        private readonly ICategoryRepository _categoryRepository;
+        private readonly ApplicationDbContext _context;
         private readonly ICatalogReadCache _catalogCache;
         private readonly IOptionsMonitor<CatalogCacheOptions> _catalogCacheOptions;
 
         public ProductService(
             IProductRepository productRepository,
-            ICategoryRepository categoryRepository,
+            ApplicationDbContext context,
             ICatalogReadCache catalogCache,
             IOptionsMonitor<CatalogCacheOptions> catalogCacheOptions)
         {
             _productRepository = productRepository;
-            _categoryRepository = categoryRepository;
+            _context = context;
             _catalogCache = catalogCache;
             _catalogCacheOptions = catalogCacheOptions;
         }
 
         public async Task<BaseResponseDto<PagedResultDto<ProductDto>>> GetProductsAsync(ProductFilterDto filterDto)
         {
-            try
+            var paging = Paging.Normalize(filterDto.PageNumber, filterDto.PageSize);
+            var (products, totalCount) = await _productRepository.GetPageAsync(new ProductQuery(
+                filterDto.CategoryId,
+                filterDto.SubCategoryId,
+                filterDto.MinPrice,
+                filterDto.MaxPrice,
+                filterDto.SearchTerm,
+                filterDto.SortBy,
+                Descending: string.Equals(filterDto.SortOrder?.Trim(), "desc", StringComparison.OrdinalIgnoreCase),
+                paging.Skip,
+                paging.PageSize));
+
+            var pagedResult = new PagedResultDto<ProductDto>
             {
-                var products = await _productRepository.GetWithFiltersAsync(
-                    filterDto.CategoryId,
-                    filterDto.MinPrice,
-                    filterDto.MaxPrice,
-                    filterDto.SearchTerm,
-                    filterDto.PageNumber,
-                    filterDto.PageSize,
-                    filterDto.SortBy,
-                    filterDto.SortOrder
-                );
+                Items = await ToDtosAsync(products),
+                TotalCount = totalCount,
+                PageNumber = paging.PageNumber,
+                PageSize = paging.PageSize,
+            };
 
-                var totalCount = await _productRepository.GetTotalCountAsync(
-                    filterDto.CategoryId,
-                    filterDto.MinPrice,
-                    filterDto.MaxPrice,
-                    filterDto.SearchTerm
-                );
-
-                var productDtos = products.Select(ConvertToDto).ToList();
-
-                var pagedResult = new PagedResultDto<ProductDto>
-                {
-                    Items = productDtos,
-                    TotalCount = totalCount,
-                    PageNumber = filterDto.PageNumber,
-                    PageSize = filterDto.PageSize
-                };
-
-                return BaseResponseDto<PagedResultDto<ProductDto>>.SuccessResult("Products retrieved successfully", pagedResult);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<PagedResultDto<ProductDto>>.ErrorResult("Error retrieving products: " + ex.Message);
-            }
+            return BaseResponseDto<PagedResultDto<ProductDto>>.SuccessResult("Products retrieved successfully", pagedResult);
         }
 
         public async Task<BaseResponseDto<ProductDto>> GetProductByIdAsync(int id)
         {
-            try
-            {
-                var product = await _productRepository.GetByIdAsync(id);
-                if (product == null)
-                {
-                    return BaseResponseDto<ProductDto>.ErrorResult("Product not found");
-                }
+            var product = await _productRepository.GetActiveByIdAsync(id);
+            if (product == null)
+                return ProductNotFound<ProductDto>();
 
-                return BaseResponseDto<ProductDto>.SuccessResult("Product retrieved successfully", ConvertToDto(product));
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ProductDto>.ErrorResult("Error retrieving product: " + ex.Message);
-            }
+            return BaseResponseDto<ProductDto>.SuccessResult("Product retrieved successfully", await ToDtoAsync(product));
         }
 
-        public async Task<BaseResponseDto<IEnumerable<ProductDto>>> GetProductsByCategoryAsync(int categoryId)
+        public async Task<BaseResponseDto<List<ProductDto>>> GetProductsByCategoryAsync(int categoryId)
         {
-            try
-            {
-                var products = await _productRepository.GetByCategoryAsync(categoryId);
-                var productDtos = products.Select(ConvertToDto);
-
-                return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult("Products retrieved successfully", productDtos);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<IEnumerable<ProductDto>>.ErrorResult("Error retrieving products: " + ex.Message);
-            }
+            var products = await _productRepository.GetByCategoryAsync(categoryId);
+            return BaseResponseDto<List<ProductDto>>.SuccessResult("Products retrieved successfully", await ToDtosAsync(products));
         }
 
-        public async Task<BaseResponseDto<IEnumerable<ProductDto>>> SearchProductsAsync(string searchTerm)
+        public async Task<BaseResponseDto<List<ProductDto>>> SearchProductsAsync(string searchTerm)
         {
-            try
-            {
-                var products = await _productRepository.SearchAsync(searchTerm);
-                var productDtos = products.Select(ConvertToDto);
-
-                return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult("Products retrieved successfully", productDtos);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<IEnumerable<ProductDto>>.ErrorResult("Error searching products: " + ex.Message);
-            }
+            var products = await _productRepository.SearchAsync(searchTerm);
+            return BaseResponseDto<List<ProductDto>>.SuccessResult("Products retrieved successfully", await ToDtosAsync(products));
         }
 
-        public async Task<BaseResponseDto<IEnumerable<ProductDto>>> GetFeaturedProductsAsync()
-        {
-            try
-            {
-                var cached = await _catalogCache.GetAsync<List<ProductDto>>(CatalogCacheKeys.FeaturedProducts);
-                if (cached is not null)
-                {
-                    return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult(
-                        "Featured products retrieved successfully",
-                        cached);
-                }
+        /// <summary>İndirim &gt; %20 veya son 7 günde eklenmiş; en yeni önce, en fazla 20.</summary>
+        public Task<BaseResponseDto<List<ProductDto>>> GetFeaturedProductsAsync() =>
+            GetCachedShowcaseAsync(
+                CatalogCacheKeys.FeaturedProducts,
+                _catalogCacheOptions.CurrentValue.FeaturedTtlMinutes,
+                () => _productRepository.GetFeaturedAsync(DateTime.UtcNow.AddDays(-7), ShowcaseLimit),
+                "Featured products retrieved successfully");
 
-                var products = await _productRepository.GetFeaturedAsync();
-                var productDtos = products.Select(ConvertToDto).ToList();
-                var ttl = TimeSpan.FromMinutes(Math.Max(1, _catalogCacheOptions.CurrentValue.FeaturedTtlMinutes));
-                await _catalogCache.SetAsync(CatalogCacheKeys.FeaturedProducts, productDtos, ttl);
-
-                return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult("Featured products retrieved successfully", productDtos);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<IEnumerable<ProductDto>>.ErrorResult("Error retrieving featured products: " + ex.Message);
-            }
-        }
-
-        public async Task<BaseResponseDto<IEnumerable<ProductDto>>> GetDiscountedProductsAsync()
-        {
-            try
-            {
-                var cached = await _catalogCache.GetAsync<List<ProductDto>>(CatalogCacheKeys.DiscountedProducts);
-                if (cached is not null)
-                {
-                    return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult(
-                        "Discounted products retrieved successfully",
-                        cached);
-                }
-
-                var products = await _productRepository.GetDiscountedAsync();
-                var productDtos = products.Select(ConvertToDto).ToList();
-                var ttl = TimeSpan.FromMinutes(Math.Max(1, _catalogCacheOptions.CurrentValue.DiscountedTtlMinutes));
-                await _catalogCache.SetAsync(CatalogCacheKeys.DiscountedProducts, productDtos, ttl);
-
-                return BaseResponseDto<IEnumerable<ProductDto>>.SuccessResult("Discounted products retrieved successfully", productDtos);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<IEnumerable<ProductDto>>.ErrorResult("Error retrieving discounted products: " + ex.Message);
-            }
-        }
+        /// <summary>İndirim &gt; 0; indirim oranı yüksek olan önce, en fazla 20.</summary>
+        public Task<BaseResponseDto<List<ProductDto>>> GetDiscountedProductsAsync() =>
+            GetCachedShowcaseAsync(
+                CatalogCacheKeys.DiscountedProducts,
+                _catalogCacheOptions.CurrentValue.DiscountedTtlMinutes,
+                () => _productRepository.GetDiscountedAsync(ShowcaseLimit),
+                "Discounted products retrieved successfully");
 
         public async Task<BaseResponseDto<ProductDto>> CreateProductAsync(ProductDto productDto)
         {
-            try
-            {
-                var category = await _categoryRepository.GetByIdAsync(productDto.CategoryId);
-                if (category == null)
-                {
-                    return BaseResponseDto<ProductDto>.ErrorResult("Category not found");
-                }
+            var referenceError = await ValidateReferencesAsync(productDto);
+            if (referenceError != null)
+                return referenceError;
 
-                var product = ConvertToEntity(productDto, category);
-                var savedProduct = await _productRepository.CreateAsync(product);
-                await InvalidateCatalogListsAsync();
-
-                return BaseResponseDto<ProductDto>.SuccessResult("Product created successfully", ConvertToDto(savedProduct));
-            }
-            catch (Exception ex)
+            var product = new Product
             {
-                return BaseResponseDto<ProductDto>.ErrorResult("Error creating product: " + ex.Message);
-            }
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            Apply(productDto, product);
+            await _productRepository.CreateAsync(product);
+            await InvalidateCatalogListsAsync();
+
+            var created = await _productRepository.GetByIdAsync(product.Id);
+            return BaseResponseDto<ProductDto>.SuccessResult("Product created successfully", await ToDtoAsync(created!));
         }
 
         public async Task<BaseResponseDto<ProductDto>> UpdateProductAsync(int id, ProductDto productDto)
         {
-            try
-            {
-                var existingProduct = await _productRepository.GetByIdAsync(id);
-                if (existingProduct == null)
-                {
-                    return BaseResponseDto<ProductDto>.ErrorResult("Product not found");
-                }
+            var product = await _productRepository.GetByIdAsync(id);
+            if (product == null)
+                return ProductNotFound<ProductDto>();
 
-                var category = await _categoryRepository.GetByIdAsync(productDto.CategoryId);
-                if (category == null)
-                {
-                    return BaseResponseDto<ProductDto>.ErrorResult("Category not found");
-                }
+            var referenceError = await ValidateReferencesAsync(productDto);
+            if (referenceError != null)
+                return referenceError;
 
-                var product = ConvertToEntity(productDto, category);
-                product.Id = id;
-                var updatedProduct = await _productRepository.UpdateAsync(id, product);
+            Apply(productDto, product);
+            product.UpdatedAt = DateTime.UtcNow;
+            await _productRepository.SaveChangesAsync();
+            await InvalidateCatalogListsAsync();
 
-                if (updatedProduct == null)
-                {
-                    return BaseResponseDto<ProductDto>.ErrorResult("Failed to update product");
-                }
-
-                await InvalidateCatalogListsAsync();
-
-                return BaseResponseDto<ProductDto>.SuccessResult("Product updated successfully", ConvertToDto(updatedProduct));
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ProductDto>.ErrorResult("Error updating product: " + ex.Message);
-            }
+            var updated = await _productRepository.GetByIdAsync(id);
+            return BaseResponseDto<ProductDto>.SuccessResult("Product updated successfully", await ToDtoAsync(updated!));
         }
 
         public async Task<BaseResponseDto<string>> DeleteProductAsync(int id)
         {
-            try
-            {
-                var result = await _productRepository.DeleteAsync(id);
-                if (!result)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Product not found");
-                }
+            var product = await _productRepository.GetActiveByIdAsync(id);
+            if (product == null)
+                return ProductNotFound<string>();
 
-                await InvalidateCatalogListsAsync();
+            product.IsActive = false;
+            product.UpdatedAt = DateTime.UtcNow;
+            await _productRepository.SaveChangesAsync();
+            await InvalidateCatalogListsAsync();
 
-                return BaseResponseDto<string>.SuccessResult("Product deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult("Error deleting product: " + ex.Message);
-            }
+            return BaseResponseDto<string>.SuccessResult("Product deleted successfully", "Product deleted successfully");
         }
 
-        private ProductDto ConvertToDto(Product product)
+        private static BaseResponseDto<T> ProductNotFound<T>() =>
+            BaseResponseDto<T>.NotFound("Product not found", ErrorCodes.ProductNotFound);
+
+        /// <summary>Kategori aktif olmalı; alt kategori verildiyse aynı kategoriye ait ve aktif olmalı.</summary>
+        private async Task<BaseResponseDto<ProductDto>?> ValidateReferencesAsync(ProductDto dto)
         {
-            return new ProductDto
+            if (!await _context.Categories.AnyAsync(c => c.Id == dto.CategoryId && c.IsActive))
+                return BaseResponseDto<ProductDto>.Fail("Category not found", ErrorCodes.CategoryNotFound);
+
+            if (dto.SubCategoryId is { } subCategoryId
+                && !await _context.SubCategories.AnyAsync(s => s.Id == subCategoryId && s.IsActive && s.CategoryId == dto.CategoryId))
             {
-                Id = product.Id,
-                ProductName = product.ProductName,
-                UnitPrice = product.UnitPrice,
-                UnitInStock = product.UnitInStock,
-                QuantityPerUnit = product.QuantityPerUnit,
-                CategoryId = product.CategoryId,
-                CategoryName = product.Category?.CategoryName,
-                Description = product.Description,
-                ImageUrl = product.ImageUrl,
-                Discount = product.Discount,
-                IsActive = product.IsActive
-            };
+                return BaseResponseDto<ProductDto>.Fail("SubCategory not found", ErrorCodes.SubCategoryNotFound);
+            }
+
+            return null;
         }
+
+        private static void Apply(ProductDto dto, Product product)
+        {
+            product.ProductName = dto.ProductName.Trim();
+            product.UnitPrice = dto.UnitPrice;
+            product.UnitInStock = dto.UnitInStock;
+            product.QuantityPerUnit = dto.QuantityPerUnit;
+            product.CategoryId = dto.CategoryId;
+            product.SubCategoryId = dto.SubCategoryId;
+            product.Description = dto.Description;
+            product.ImageUrl = dto.ImageUrl;
+            product.Discount = dto.Discount;
+            product.IsActive = dto.IsActive;
+        }
+
+        private async Task<BaseResponseDto<List<ProductDto>>> GetCachedShowcaseAsync(
+            string cacheKey,
+            int ttlMinutes,
+            Func<Task<IReadOnlyList<Product>>> load,
+            string message)
+        {
+            var cached = await _catalogCache.GetAsync<List<ProductDto>>(cacheKey);
+            if (cached is not null)
+                return BaseResponseDto<List<ProductDto>>.SuccessResult(message, cached);
+
+            var productDtos = await ToDtosAsync(await load());
+            await _catalogCache.SetAsync(cacheKey, productDtos, TimeSpan.FromMinutes(Math.Max(1, ttlMinutes)));
+            return BaseResponseDto<List<ProductDto>>.SuccessResult(message, productDtos);
+        }
+
+        private async Task<ProductDto> ToDtoAsync(Product product) => (await ToDtosAsync([product]))[0];
+
+        private async Task<List<ProductDto>> ToDtosAsync(IReadOnlyList<Product> products)
+        {
+            var ratings = await _productRepository.GetRatingSummariesAsync(products.Select(p => p.Id).ToList());
+            return products
+                .Select(p => ToDto(p, ratings.TryGetValue(p.Id, out var rating) ? rating : null))
+                .ToList();
+        }
+
+        private static ProductDto ToDto(Product product, ProductRatingSummary? rating) => new()
+        {
+            Id = product.Id,
+            ProductName = product.ProductName,
+            UnitPrice = product.UnitPrice,
+            UnitInStock = product.UnitInStock,
+            QuantityPerUnit = product.QuantityPerUnit,
+            CategoryId = product.CategoryId,
+            CategoryName = product.Category?.CategoryName,
+            SubCategoryId = product.SubCategoryId,
+            SubCategoryName = product.SubCategory?.SubCategoryName,
+            Description = product.Description,
+            ImageUrl = product.ImageUrl,
+            Discount = product.Discount,
+            IsActive = product.IsActive,
+            AverageRating = rating is null ? 0 : Math.Round(rating.AverageRating, 1, MidpointRounding.AwayFromZero),
+            TotalReviews = rating?.TotalReviews ?? 0,
+            CreatedAt = product.CreatedAt,
+            UpdatedAt = product.UpdatedAt,
+        };
 
         private async Task InvalidateCatalogListsAsync()
         {
             await _catalogCache.RemoveAsync(CatalogCacheKeys.FeaturedProducts);
             await _catalogCache.RemoveAsync(CatalogCacheKeys.DiscountedProducts);
-        }
-
-        private Product ConvertToEntity(ProductDto dto, Category category)
-        {
-            return new Product
-            {
-                ProductName = dto.ProductName,
-                UnitPrice = dto.UnitPrice,
-                UnitInStock = dto.UnitInStock,
-                QuantityPerUnit = dto.QuantityPerUnit,
-                CategoryId = dto.CategoryId,
-                Category = category,
-                Description = dto.Description,
-                ImageUrl = dto.ImageUrl,
-                Discount = dto.Discount,
-                IsActive = dto.IsActive
-            };
         }
     }
 }

@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
@@ -16,157 +17,109 @@ namespace EcommerceBackend.Application.Services
 
         public async Task<BaseResponseDto<List<CategoryDto>>> GetAllCategoriesAsync()
         {
-            try
-            {
-                var categories = await _context.Categories
-                    .Where(c => c.IsActive)
-                    .OrderBy(c => c.CategoryName)
-                    .Select(c => new CategoryDto
-                    {
-                        Id = c.Id,
-                        CategoryName = c.CategoryName,
-                        Description = c.Description,
-                        ImageUrl = c.ImageUrl,
-                        IsActive = c.IsActive,
-                        CreatedAt = c.CreatedAt,
-                        UpdatedAt = c.UpdatedAt
-                    })
-                    .ToListAsync();
+            var categories = await _context.Categories
+                .AsNoTracking()
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.CategoryName)
+                .ToListAsync();
 
-                return BaseResponseDto<List<CategoryDto>>.SuccessResult("Categories retrieved successfully", categories);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<CategoryDto>>.ErrorResult($"Error retrieving categories: {ex.Message}");
-            }
+            return BaseResponseDto<List<CategoryDto>>.SuccessResult(
+                "Categories retrieved successfully",
+                categories.Select(ToDto).ToList());
         }
 
         public async Task<BaseResponseDto<CategoryDto>> GetCategoryByIdAsync(int id)
         {
-            try
-            {
-                var category = await _context.Categories
-                    .Where(c => c.Id == id && c.IsActive)
-                    .Select(c => new CategoryDto
-                    {
-                        Id = c.Id,
-                        CategoryName = c.CategoryName,
-                        Description = c.Description,
-                        ImageUrl = c.ImageUrl,
-                        IsActive = c.IsActive,
-                        CreatedAt = c.CreatedAt,
-                        UpdatedAt = c.UpdatedAt
-                    })
-                    .FirstOrDefaultAsync();
+            var category = await _context.Categories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
 
-                if (category == null)
-                {
-                    return BaseResponseDto<CategoryDto>.ErrorResult("Category not found");
-                }
-
-                return BaseResponseDto<CategoryDto>.SuccessResult("Category retrieved successfully", category);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<CategoryDto>.ErrorResult($"Error retrieving category: {ex.Message}");
-            }
+            return category == null
+                ? CategoryNotFound()
+                : BaseResponseDto<CategoryDto>.SuccessResult("Category retrieved successfully", ToDto(category));
         }
 
         public async Task<BaseResponseDto<CategoryDto>> CreateCategoryAsync(CreateCategoryDto createCategoryDto)
         {
-            try
+            var name = createCategoryDto.CategoryName.Trim();
+            if (await NameExistsAsync(name, exceptId: null))
+                return CategoryExists();
+
+            var category = new Category
             {
-                var category = new Category
-                {
-                    CategoryName = createCategoryDto.CategoryName,
-                    Description = createCategoryDto.Description,
-                    ImageUrl = createCategoryDto.ImageUrl,
-                    IsActive = createCategoryDto.IsActive,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
+                CategoryName = name,
+                Description = createCategoryDto.Description,
+                ImageUrl = createCategoryDto.ImageUrl,
+                IsActive = createCategoryDto.IsActive,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                _context.Categories.Add(category);
-                await _context.SaveChangesAsync();
+            _context.Categories.Add(category);
+            await _context.SaveChangesAsync();
 
-                var categoryDto = new CategoryDto
-                {
-                    Id = category.Id,
-                    CategoryName = category.CategoryName,
-                    Description = category.Description,
-                    ImageUrl = category.ImageUrl,
-                    IsActive = category.IsActive,
-                    CreatedAt = category.CreatedAt,
-                    UpdatedAt = category.UpdatedAt
-                };
-
-                return BaseResponseDto<CategoryDto>.SuccessResult("Category created successfully", categoryDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<CategoryDto>.ErrorResult($"Error creating category: {ex.Message}");
-            }
+            return BaseResponseDto<CategoryDto>.SuccessResult("Category created successfully", ToDto(category));
         }
 
+        /// <summary>Pasif kategoriler de güncellenebilir; <c>isActive</c> gönderilmezse değişmez.</summary>
         public async Task<BaseResponseDto<CategoryDto>> UpdateCategoryAsync(int id, UpdateCategoryDto updateCategoryDto)
         {
-            try
-            {
-                var category = await _context.Categories.FindAsync(id);
-                if (category == null)
-                {
-                    return BaseResponseDto<CategoryDto>.ErrorResult("Category not found");
-                }
+            var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == id);
+            if (category == null)
+                return CategoryNotFound();
 
-                category.CategoryName = updateCategoryDto.CategoryName;
-                category.Description = updateCategoryDto.Description;
-                category.ImageUrl = updateCategoryDto.ImageUrl;
-                category.IsActive = updateCategoryDto.IsActive;
-                category.UpdatedAt = DateTime.UtcNow;
+            var name = updateCategoryDto.CategoryName.Trim();
+            if (await NameExistsAsync(name, exceptId: id))
+                return CategoryExists();
 
-                await _context.SaveChangesAsync();
+            category.CategoryName = name;
+            category.Description = updateCategoryDto.Description;
+            category.ImageUrl = updateCategoryDto.ImageUrl;
+            if (updateCategoryDto.IsActive is { } isActive)
+                category.IsActive = isActive;
+            category.UpdatedAt = DateTime.UtcNow;
 
-                var categoryDto = new CategoryDto
-                {
-                    Id = category.Id,
-                    CategoryName = category.CategoryName,
-                    Description = category.Description,
-                    ImageUrl = category.ImageUrl,
-                    IsActive = category.IsActive,
-                    CreatedAt = category.CreatedAt,
-                    UpdatedAt = category.UpdatedAt
-                };
+            await _context.SaveChangesAsync();
 
-                return BaseResponseDto<CategoryDto>.SuccessResult("Category updated successfully", categoryDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<CategoryDto>.ErrorResult($"Error updating category: {ex.Message}");
-            }
+            return BaseResponseDto<CategoryDto>.SuccessResult("Category updated successfully", ToDto(category));
         }
 
         public async Task<BaseResponseDto<string>> DeleteCategoryAsync(int id)
         {
-            try
-            {
-                var category = await _context.Categories.FindAsync(id);
-                if (category == null)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Category not found");
-                }
+            var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+            if (category == null)
+                return BaseResponseDto<string>.NotFound("Category not found", ErrorCodes.CategoryNotFound);
 
-                // Soft delete - set IsActive to false
-                category.IsActive = false;
-                category.UpdatedAt = DateTime.UtcNow;
+            category.IsActive = false;
+            category.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                await _context.SaveChangesAsync();
-
-                return BaseResponseDto<string>.SuccessResult("Category deleted successfully", "Category deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error deleting category: {ex.Message}");
-            }
+            return BaseResponseDto<string>.SuccessResult("Category deleted successfully", "Category deleted successfully");
         }
+
+        /// <summary>Ad benzersizliği harf duyarsızdır ve pasif kategorileri de kapsar (veritabanındaki benzersiz indeks).</summary>
+        private Task<bool> NameExistsAsync(string name, int? exceptId)
+        {
+            var lowered = name.ToLower();
+            return _context.Categories.AnyAsync(c =>
+                c.CategoryName.ToLower() == lowered && (exceptId == null || c.Id != exceptId));
+        }
+
+        private static BaseResponseDto<CategoryDto> CategoryNotFound() =>
+            BaseResponseDto<CategoryDto>.NotFound("Category not found", ErrorCodes.CategoryNotFound);
+
+        private static BaseResponseDto<CategoryDto> CategoryExists() =>
+            BaseResponseDto<CategoryDto>.Fail("Category name already exists", ErrorCodes.CategoryExists);
+
+        private static CategoryDto ToDto(Category c) => new()
+        {
+            Id = c.Id,
+            CategoryName = c.CategoryName,
+            Description = c.Description,
+            ImageUrl = c.ImageUrl,
+            IsActive = c.IsActive,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt
+        };
     }
 }

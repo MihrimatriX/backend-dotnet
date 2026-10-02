@@ -1,12 +1,12 @@
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Application.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 
 namespace EcommerceBackend.Infrastructure.Web.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
-    public class AuthController : ControllerBase
+    public class AuthController : ApiControllerBase
     {
         private readonly IAuthService _authService;
 
@@ -16,41 +16,20 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<ActionResult<BaseResponseDto<AuthResponseDto>>> Register(RegisterRequestDto registerRequest)
-        {
-            var result = await _authService.RegisterAsync(registerRequest);
-
-            if (result.Success)
-            {
-                return StatusCode(201, result);
-            }
-
-            if (result.Message.Contains("already taken"))
-            {
-                return Conflict(result);
-            }
-
-            return BadRequest(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<AuthResponseDto>>> Register(RegisterRequestDto registerRequest) =>
+            RespondCreated(await _authService.RegisterAsync(registerRequest));
 
         [HttpPost("login")]
         public async Task<ActionResult<BaseResponseDto<AuthResponseDto>>> Login(LoginRequestDto loginRequest)
         {
-            var result = await _authService.LoginAsync(loginRequest);
-
-            if (result.Success)
-            {
-                return Ok(result);
-            }
-
-            return Unauthorized(result);
+            var client = new ClientInfo(
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers[HeaderNames.UserAgent].ToString());
+            return Respond(await _authService.LoginAsync(loginRequest, client));
         }
 
         [HttpPost("logout")]
-        public async Task<ActionResult<BaseResponseDto<string>>> Logout()
-        {
-            var result = await _authService.LogoutAsync();
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<string>>> Logout() =>
+            Respond(await _authService.LogoutAsync());
     }
 }

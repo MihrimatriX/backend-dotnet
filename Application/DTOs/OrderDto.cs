@@ -16,9 +16,21 @@ namespace EcommerceBackend.Application.DTOs
         /// <summary>Ara toplam + kargo (ödenecek toplam).</summary>
         public decimal TotalAmount { get; set; }
         public string Status { get; set; } = string.Empty;
-        public AddressDto ShippingAddress { get; set; } = new AddressDto();
-        public AddressDto BillingAddress { get; set; } = new AddressDto();
+        public string? Notes { get; set; }
+        public AddressDto? ShippingAddress { get; set; }
+        public AddressDto? BillingAddress { get; set; }
+        /// <summary>Maskeli ödeme yöntemi.</summary>
         public PaymentMethodDto? PaymentMethod { get; set; }
+        public string? TrackingNumber { get; set; }
+        public string? Carrier { get; set; }
+        public DateTime? ShippedAt { get; set; }
+        public DateTime? DeliveredAt { get; set; }
+        public DateTime? EstimatedDeliveryAt { get; set; }
+        public string? CancelReason { get; set; }
+        public string? ReturnReason { get; set; }
+        public DateTime? ReturnRequestedAt { get; set; }
+        /// <summary>Demo lojistik açıkken ilerletilebilir siparişlerde <c>DEMO_ADVANCE_FULFILLMENT</c> (§5.5).</summary>
+        public string? DemoNextAction { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
@@ -30,10 +42,12 @@ namespace EcommerceBackend.Application.DTOs
         public string ProductName { get; set; } = string.Empty;
         public string? ProductImageUrl { get; set; }
         public int Quantity { get; set; }
+        /// <summary>Sipariş anındaki indirimli birim fiyat.</summary>
         public decimal UnitPrice { get; set; }
         public decimal TotalPrice { get; set; }
     }
 
+    /// <summary>Sipariş oluşturma (§5.2). Boş <c>items</c> → 400 <c>EMPTY_ORDER</c> (servis kuralı).</summary>
     public class CreateOrderDto
     {
         [Required(ErrorMessage = "Shipping address is required")]
@@ -43,7 +57,6 @@ namespace EcommerceBackend.Application.DTOs
         public int PaymentMethodId { get; set; }
 
         [Required(ErrorMessage = "Order items are required")]
-        [MinLength(1, ErrorMessage = "At least one item is required")]
         public List<CreateOrderItemDto> Items { get; set; } = new List<CreateOrderItemDto>();
 
         public string? Notes { get; set; }
@@ -65,5 +78,19 @@ namespace EcommerceBackend.Application.DTOs
         public string Status { get; set; } = string.Empty;
 
         public string? Notes { get; set; }
+    }
+
+    /// <summary>Müşteri iptali; gövde isteğe bağlıdır.</summary>
+    public class CancelOrderDto
+    {
+        [StringLength(500, ErrorMessage = "Reason cannot exceed 500 characters")]
+        public string? Reason { get; set; }
+    }
+
+    public class ReturnRequestDto
+    {
+        [Required(ErrorMessage = "Reason is required")]
+        [StringLength(500, ErrorMessage = "Reason cannot exceed 500 characters")]
+        public string Reason { get; set; } = string.Empty;
     }
 }

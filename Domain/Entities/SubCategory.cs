@@ -18,9 +18,6 @@ public class SubCategory : BaseEntity
     [Required]
     public int CategoryId { get; set; }
 
-    [Required]
-    public new bool IsActive { get; set; } = true;
-
     // Navigation properties
     public virtual Category Category { get; set; } = null!;
     public virtual ICollection<Product> Products { get; set; } = new List<Product>();

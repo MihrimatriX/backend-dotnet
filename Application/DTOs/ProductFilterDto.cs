@@ -3,6 +3,7 @@ namespace EcommerceBackend.Application.DTOs
     public class ProductFilterDto
     {
         public int? CategoryId { get; set; }
+        public int? SubCategoryId { get; set; }
         public decimal? MinPrice { get; set; }
         public decimal? MaxPrice { get; set; }
         public string? SearchTerm { get; set; }

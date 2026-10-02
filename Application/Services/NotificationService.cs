@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
@@ -14,258 +15,144 @@ namespace EcommerceBackend.Application.Services
             _context = context;
         }
 
-        public async Task<BaseResponseDto<List<NotificationDto>>> GetUserNotificationsAsync(int userId, int pageNumber = 1, int pageSize = 10)
+        public async Task<BaseResponseDto<List<NotificationDto>>> GetUserNotificationsAsync(int userId, int pageNumber, int pageSize)
         {
-            try
-            {
-                var notifications = await _context.Notifications
-                    .Where(n => n.UserId == userId && n.IsActive)
-                    .OrderByDescending(n => n.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(n => new NotificationDto
-                    {
-                        Id = n.Id,
-                        UserId = n.UserId,
-                        Title = n.Title,
-                        Message = n.Message,
-                        Type = n.Type,
-                        ActionUrl = n.ActionUrl,
-                        IsRead = n.IsRead,
-                        ReadAt = n.ReadAt,
-                        IsActive = n.IsActive,
-                        CreatedAt = n.CreatedAt,
-                        UpdatedAt = n.UpdatedAt
-                    })
-                    .ToListAsync();
+            var paging = Paging.Normalize(pageNumber, pageSize);
+            var notifications = await ActiveFor(userId)
+                .OrderByDescending(n => n.CreatedAt)
+                .ThenByDescending(n => n.Id)
+                .Skip(paging.Skip)
+                .Take(paging.PageSize)
+                .ToListAsync();
 
-                return BaseResponseDto<List<NotificationDto>>.SuccessResult("Notifications retrieved successfully", notifications);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<NotificationDto>>.ErrorResult($"Error retrieving notifications: {ex.Message}");
-            }
+            return BaseResponseDto<List<NotificationDto>>.SuccessResult(
+                "Notifications retrieved successfully",
+                notifications.Select(ToDto).ToList());
         }
 
         public async Task<BaseResponseDto<NotificationDto>> GetNotificationByIdAsync(int notificationId, int userId)
         {
-            try
-            {
-                var notification = await _context.Notifications
-                    .Where(n => n.Id == notificationId && n.UserId == userId && n.IsActive)
-                    .Select(n => new NotificationDto
-                    {
-                        Id = n.Id,
-                        UserId = n.UserId,
-                        Title = n.Title,
-                        Message = n.Message,
-                        Type = n.Type,
-                        ActionUrl = n.ActionUrl,
-                        IsRead = n.IsRead,
-                        ReadAt = n.ReadAt,
-                        IsActive = n.IsActive,
-                        CreatedAt = n.CreatedAt,
-                        UpdatedAt = n.UpdatedAt
-                    })
-                    .FirstOrDefaultAsync();
-
-                if (notification == null)
-                {
-                    return BaseResponseDto<NotificationDto>.ErrorResult("Notification not found");
-                }
-
-                return BaseResponseDto<NotificationDto>.SuccessResult("Notification retrieved successfully", notification);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<NotificationDto>.ErrorResult($"Error retrieving notification: {ex.Message}");
-            }
+            var notification = await ActiveFor(userId).FirstOrDefaultAsync(n => n.Id == notificationId);
+            return notification == null
+                ? NotificationNotFound<NotificationDto>()
+                : BaseResponseDto<NotificationDto>.SuccessResult("Notification retrieved successfully", ToDto(notification));
         }
 
         public async Task<BaseResponseDto<NotificationDto>> CreateNotificationAsync(CreateNotificationDto createNotificationDto)
         {
-            try
+            if (!await _context.Users.AnyAsync(u => u.Id == createNotificationDto.UserId && u.IsActive))
+                return BaseResponseDto<NotificationDto>.Fail("User not found", ErrorCodes.UserNotFound);
+
+            var notification = new Notification
             {
-                var notification = new Notification
-                {
-                    UserId = createNotificationDto.UserId,
-                    Title = createNotificationDto.Title,
-                    Message = createNotificationDto.Message,
-                    Type = createNotificationDto.Type,
-                    ActionUrl = createNotificationDto.ActionUrl,
-                    IsRead = false,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
+                UserId = createNotificationDto.UserId,
+                Title = createNotificationDto.Title,
+                Message = createNotificationDto.Message,
+                Type = createNotificationDto.Type,
+                ActionUrl = createNotificationDto.ActionUrl,
+                IsRead = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                _context.Notifications.Add(notification);
-                await _context.SaveChangesAsync();
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
 
-                var notificationDto = new NotificationDto
-                {
-                    Id = notification.Id,
-                    UserId = notification.UserId,
-                    Title = notification.Title,
-                    Message = notification.Message,
-                    Type = notification.Type,
-                    ActionUrl = notification.ActionUrl,
-                    IsRead = notification.IsRead,
-                    ReadAt = notification.ReadAt,
-                    IsActive = notification.IsActive,
-                    CreatedAt = notification.CreatedAt,
-                    UpdatedAt = notification.UpdatedAt
-                };
-
-                return BaseResponseDto<NotificationDto>.SuccessResult("Notification created successfully", notificationDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<NotificationDto>.ErrorResult($"Error creating notification: {ex.Message}");
-            }
+            return BaseResponseDto<NotificationDto>.SuccessResult("Notification created successfully", ToDto(notification));
         }
 
+        /// <summary>Okundu yapılırsa <c>readAt</c> = şimdi, okunmadı yapılırsa <c>readAt</c> = null.</summary>
         public async Task<BaseResponseDto<NotificationDto>> UpdateNotificationAsync(int notificationId, int userId, UpdateNotificationDto updateNotificationDto)
         {
-            try
-            {
-                var notification = await _context.Notifications
-                    .Where(n => n.Id == notificationId && n.UserId == userId && n.IsActive)
-                    .FirstOrDefaultAsync();
+            var notification = await _context.Notifications
+                .FirstOrDefaultAsync(n => n.Id == notificationId && n.UserId == userId && n.IsActive);
+            if (notification == null)
+                return NotificationNotFound<NotificationDto>();
 
-                if (notification == null)
-                {
-                    return BaseResponseDto<NotificationDto>.ErrorResult("Notification not found");
-                }
+            if (updateNotificationDto.IsRead && !notification.IsRead)
+                notification.ReadAt = DateTime.UtcNow;
+            else if (!updateNotificationDto.IsRead)
+                notification.ReadAt = null;
+            notification.IsRead = updateNotificationDto.IsRead;
+            notification.UpdatedAt = DateTime.UtcNow;
 
-                notification.IsRead = updateNotificationDto.IsRead;
-                if (updateNotificationDto.IsRead && !notification.IsRead)
-                {
-                    notification.ReadAt = DateTime.UtcNow;
-                }
-                notification.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                await _context.SaveChangesAsync();
-
-                var notificationDto = new NotificationDto
-                {
-                    Id = notification.Id,
-                    UserId = notification.UserId,
-                    Title = notification.Title,
-                    Message = notification.Message,
-                    Type = notification.Type,
-                    ActionUrl = notification.ActionUrl,
-                    IsRead = notification.IsRead,
-                    ReadAt = notification.ReadAt,
-                    IsActive = notification.IsActive,
-                    CreatedAt = notification.CreatedAt,
-                    UpdatedAt = notification.UpdatedAt
-                };
-
-                return BaseResponseDto<NotificationDto>.SuccessResult("Notification updated successfully", notificationDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<NotificationDto>.ErrorResult($"Error updating notification: {ex.Message}");
-            }
+            return BaseResponseDto<NotificationDto>.SuccessResult("Notification updated successfully", ToDto(notification));
         }
 
         public async Task<BaseResponseDto<string>> DeleteNotificationAsync(int notificationId, int userId)
         {
-            try
-            {
-                var notification = await _context.Notifications
-                    .Where(n => n.Id == notificationId && n.UserId == userId && n.IsActive)
-                    .FirstOrDefaultAsync();
+            var notification = await _context.Notifications
+                .FirstOrDefaultAsync(n => n.Id == notificationId && n.UserId == userId && n.IsActive);
+            if (notification == null)
+                return NotificationNotFound<string>();
 
-                if (notification == null)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Notification not found");
-                }
+            notification.IsActive = false;
+            notification.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                notification.IsActive = false;
-                notification.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return BaseResponseDto<string>.SuccessResult("Notification deleted successfully", "Notification deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error deleting notification: {ex.Message}");
-            }
+            return BaseResponseDto<string>.SuccessResult("Notification deleted successfully", "Notification deleted successfully");
         }
 
         public async Task<BaseResponseDto<string>> MarkAllAsReadAsync(int userId)
         {
-            try
+            var unread = await _context.Notifications
+                .Where(n => n.UserId == userId && n.IsActive && !n.IsRead)
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            foreach (var notification in unread)
             {
-                var unreadNotifications = await _context.Notifications
-                    .Where(n => n.UserId == userId && n.IsActive && !n.IsRead)
-                    .ToListAsync();
-
-                foreach (var notification in unreadNotifications)
-                {
-                    notification.IsRead = true;
-                    notification.ReadAt = DateTime.UtcNow;
-                    notification.UpdatedAt = DateTime.UtcNow;
-                }
-
-                await _context.SaveChangesAsync();
-
-                return BaseResponseDto<string>.SuccessResult("All notifications marked as read", "All notifications marked as read");
+                notification.IsRead = true;
+                notification.ReadAt = now;
+                notification.UpdatedAt = now;
             }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error marking notifications as read: {ex.Message}");
-            }
+
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<string>.SuccessResult("All notifications marked as read", "All notifications marked as read");
         }
 
+        /// <summary>Toplam, okunmamış ve en yeni 5 bildirim.</summary>
         public async Task<BaseResponseDto<NotificationSummaryDto>> GetNotificationSummaryAsync(int userId)
         {
-            try
+            var recent = await ActiveFor(userId)
+                .OrderByDescending(n => n.CreatedAt)
+                .ThenByDescending(n => n.Id)
+                .Take(5)
+                .ToListAsync();
+
+            var summary = new NotificationSummaryDto
             {
-                var totalNotifications = await _context.Notifications
-                    .Where(n => n.UserId == userId && n.IsActive)
-                    .CountAsync();
+                TotalNotifications = await ActiveFor(userId).CountAsync(),
+                UnreadNotifications = await ActiveFor(userId).CountAsync(n => !n.IsRead),
+                RecentNotifications = recent.Select(ToDto).ToList()
+            };
 
-                var unreadNotifications = await _context.Notifications
-                    .Where(n => n.UserId == userId && n.IsActive && !n.IsRead)
-                    .CountAsync();
-
-                var recentNotifications = await _context.Notifications
-                    .Where(n => n.UserId == userId && n.IsActive)
-                    .OrderByDescending(n => n.CreatedAt)
-                    .Take(5)
-                    .Select(n => new NotificationDto
-                    {
-                        Id = n.Id,
-                        UserId = n.UserId,
-                        Title = n.Title,
-                        Message = n.Message,
-                        Type = n.Type,
-                        ActionUrl = n.ActionUrl,
-                        IsRead = n.IsRead,
-                        ReadAt = n.ReadAt,
-                        IsActive = n.IsActive,
-                        CreatedAt = n.CreatedAt,
-                        UpdatedAt = n.UpdatedAt
-                    })
-                    .ToListAsync();
-
-                var summary = new NotificationSummaryDto
-                {
-                    TotalNotifications = totalNotifications,
-                    UnreadNotifications = unreadNotifications,
-                    RecentNotifications = recentNotifications
-                };
-
-                return BaseResponseDto<NotificationSummaryDto>.SuccessResult("Notification summary retrieved successfully", summary);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<NotificationSummaryDto>.ErrorResult($"Error retrieving notification summary: {ex.Message}");
-            }
+            return BaseResponseDto<NotificationSummaryDto>.SuccessResult("Notification summary retrieved successfully", summary);
         }
+
+        private IQueryable<Notification> ActiveFor(int userId) =>
+            _context.Notifications.AsNoTracking().Where(n => n.UserId == userId && n.IsActive);
+
+        private static BaseResponseDto<T> NotificationNotFound<T>() =>
+            BaseResponseDto<T>.NotFound("Notification not found", ErrorCodes.NotificationNotFound);
+
+        private static NotificationDto ToDto(Notification n) => new()
+        {
+            Id = n.Id,
+            UserId = n.UserId,
+            Title = n.Title,
+            Message = n.Message,
+            Type = n.Type,
+            ActionUrl = n.ActionUrl,
+            IsRead = n.IsRead,
+            ReadAt = n.ReadAt,
+            IsActive = n.IsActive,
+            CreatedAt = n.CreatedAt,
+            UpdatedAt = n.UpdatedAt
+        };
     }
 }
