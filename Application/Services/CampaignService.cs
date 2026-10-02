@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
@@ -8,348 +9,151 @@ namespace EcommerceBackend.Application.Services
     public class CampaignService : ICampaignService
     {
         private readonly ApplicationDbContext _context;
-        private readonly ILogger<CampaignService> _logger;
 
-        public CampaignService(ApplicationDbContext context, ILogger<CampaignService> logger)
+        public CampaignService(ApplicationDbContext context)
         {
             _context = context;
-            _logger = logger;
         }
 
+        /// <summary>Aktif kampanyalar, en yeni önce.</summary>
         public async Task<BaseResponseDto<List<CampaignDto>>> GetAllCampaignsAsync()
         {
-            try
-            {
-                var campaigns = await _context.Campaigns
-                    .Where(c => c.IsActive)
-                    .OrderByDescending(c => c.CreatedAt)
-                    .Select(c => new CampaignDto
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Subtitle = c.Subtitle,
-                        Description = c.Description,
-                        ButtonText = c.ButtonText,
-                        Discount = c.Discount,
-                        IsActive = c.IsActive,
-                        ImageUrl = c.ImageUrl,
-                        CreatedAt = c.CreatedAt,
-                        UpdatedAt = c.UpdatedAt
-                    })
-                    .ToListAsync();
+            var campaigns = await _context.Campaigns
+                .AsNoTracking()
+                .Where(c => c.IsActive)
+                .OrderByDescending(c => c.CreatedAt)
+                .ThenByDescending(c => c.Id)
+                .ToListAsync();
 
-                return new BaseResponseDto<List<CampaignDto>>
-                {
-                    Success = true,
-                    Data = campaigns,
-                    Message = "Campaigns retrieved successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving campaigns");
-                return new BaseResponseDto<List<CampaignDto>>
-                {
-                    Success = false,
-                    Message = "Error retrieving campaigns"
-                };
-            }
+            return BaseResponseDto<List<CampaignDto>>.SuccessResult(
+                "Campaigns retrieved successfully",
+                campaigns.Select(ToDto).ToList());
+        }
+
+        /// <summary>Aktif ve <c>startDate ≤ şimdi (UTC) ≤ endDate</c>.</summary>
+        public async Task<BaseResponseDto<List<CampaignDto>>> GetActiveCampaignsAsync()
+        {
+            var now = DateTime.UtcNow;
+            var campaigns = await _context.Campaigns
+                .AsNoTracking()
+                .Where(c => c.IsActive && c.StartDate <= now && c.EndDate >= now)
+                .OrderByDescending(c => c.CreatedAt)
+                .ThenByDescending(c => c.Id)
+                .ToListAsync();
+
+            return BaseResponseDto<List<CampaignDto>>.SuccessResult(
+                "Active campaigns retrieved successfully",
+                campaigns.Select(ToDto).ToList());
         }
 
         public async Task<BaseResponseDto<CampaignDto>> GetCampaignByIdAsync(int id)
         {
-            try
-            {
-                var campaign = await _context.Campaigns
-                    .Where(c => c.Id == id && c.IsActive)
-                    .Select(c => new CampaignDto
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Subtitle = c.Subtitle,
-                        Description = c.Description,
-                        ButtonText = c.ButtonText,
-                        Discount = c.Discount,
-                        IsActive = c.IsActive,
-                        ImageUrl = c.ImageUrl,
-                        CreatedAt = c.CreatedAt,
-                        UpdatedAt = c.UpdatedAt
-                    })
-                    .FirstOrDefaultAsync();
+            var campaign = await _context.Campaigns
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
 
-                if (campaign == null)
-                {
-                    return new BaseResponseDto<CampaignDto>
-                    {
-                        Success = false,
-                        Message = "Campaign not found"
-                    };
-                }
-
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = true,
-                    Data = campaign,
-                    Message = "Campaign retrieved successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving campaign {CampaignId}", id);
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = false,
-                    Message = "Error retrieving campaign"
-                };
-            }
+            return campaign == null
+                ? CampaignNotFound<CampaignDto>()
+                : BaseResponseDto<CampaignDto>.SuccessResult("Campaign retrieved successfully", ToDto(campaign));
         }
 
-        public async Task<BaseResponseDto<List<CampaignDto>>> GetActiveCampaignsAsync()
+        public async Task<BaseResponseDto<CampaignDto>> CreateCampaignAsync(CreateCampaignDto dto)
         {
-            try
-            {
-                var campaigns = await _context.Campaigns
-                    .Where(c => c.IsActive)
-                    .OrderByDescending(c => c.CreatedAt)
-                    .Select(c => new CampaignDto
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Subtitle = c.Subtitle,
-                        Description = c.Description,
-                        ButtonText = c.ButtonText,
-                        Discount = c.Discount,
-                        IsActive = c.IsActive,
-                        ImageUrl = c.ImageUrl,
-                        CreatedAt = c.CreatedAt,
-                        UpdatedAt = c.UpdatedAt
-                    })
-                    .ToListAsync();
+            var (startDate, endDate) = (dto.StartDate!.Value, dto.EndDate!.Value);
+            if (endDate < startDate)
+                return InvalidDateRange();
 
-                return new BaseResponseDto<List<CampaignDto>>
-                {
-                    Success = true,
-                    Data = campaigns,
-                    Message = "Active campaigns retrieved successfully"
-                };
-            }
-            catch (Exception ex)
+            var campaign = new Campaign
             {
-                _logger.LogError(ex, "Error retrieving active campaigns");
-                return new BaseResponseDto<List<CampaignDto>>
-                {
-                    Success = false,
-                    Message = "Error retrieving active campaigns"
-                };
-            }
+                Title = dto.Title.Trim(),
+                Subtitle = dto.Subtitle,
+                Description = dto.Description,
+                Discount = dto.Discount,
+                ImageUrl = dto.ImageUrl,
+                BackgroundColor = dto.BackgroundColor,
+                TimeLeft = dto.TimeLeft,
+                ButtonText = dto.ButtonText,
+                ButtonHref = dto.ButtonHref,
+                StartDate = startDate,
+                EndDate = endDate,
+                IsActive = dto.IsActive,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.Campaigns.Add(campaign);
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<CampaignDto>.SuccessResult("Campaign created successfully", ToDto(campaign));
         }
 
-        public async Task<BaseResponseDto<CampaignDto>> CreateCampaignAsync(CampaignDto campaignDto)
+        /// <summary>Pasif kampanyalar da güncellenebilir; <c>isActive</c> gönderilmezse değişmez.</summary>
+        public async Task<BaseResponseDto<CampaignDto>> UpdateCampaignAsync(int id, UpdateCampaignDto dto)
         {
-            try
-            {
-                var campaign = new Campaign
-                {
-                    Title = campaignDto.Title,
-                    Subtitle = campaignDto.Subtitle,
-                    Description = campaignDto.Description,
-                    ButtonText = campaignDto.ButtonText,
-                    Discount = campaignDto.Discount,
-                    IsActive = campaignDto.IsActive,
-                    ImageUrl = campaignDto.ImageUrl,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
+            var campaign = await _context.Campaigns.FirstOrDefaultAsync(c => c.Id == id);
+            if (campaign == null)
+                return CampaignNotFound<CampaignDto>();
 
-                _context.Campaigns.Add(campaign);
-                await _context.SaveChangesAsync();
+            var (startDate, endDate) = (dto.StartDate!.Value, dto.EndDate!.Value);
+            if (endDate < startDate)
+                return InvalidDateRange();
 
-                campaignDto.Id = campaign.Id;
-                campaignDto.CreatedAt = campaign.CreatedAt;
-                campaignDto.UpdatedAt = campaign.UpdatedAt;
+            campaign.Title = dto.Title.Trim();
+            campaign.Subtitle = dto.Subtitle;
+            campaign.Description = dto.Description;
+            campaign.Discount = dto.Discount;
+            campaign.ImageUrl = dto.ImageUrl;
+            campaign.BackgroundColor = dto.BackgroundColor;
+            campaign.TimeLeft = dto.TimeLeft;
+            campaign.ButtonText = dto.ButtonText;
+            campaign.ButtonHref = dto.ButtonHref;
+            campaign.StartDate = startDate;
+            campaign.EndDate = endDate;
+            if (dto.IsActive is { } isActive)
+                campaign.IsActive = isActive;
+            campaign.UpdatedAt = DateTime.UtcNow;
 
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = true,
-                    Data = campaignDto,
-                    Message = "Campaign created successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating campaign");
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = false,
-                    Message = "Error creating campaign"
-                };
-            }
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<CampaignDto>.SuccessResult("Campaign updated successfully", ToDto(campaign));
         }
 
-        public async Task<BaseResponseDto<CampaignDto>> UpdateCampaignAsync(int id, CampaignDto campaignDto)
+        public async Task<BaseResponseDto<string>> DeleteCampaignAsync(int id)
         {
-            try
-            {
-                var campaign = await _context.Campaigns
-                    .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+            var campaign = await _context.Campaigns.FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+            if (campaign == null)
+                return CampaignNotFound<string>();
 
-                if (campaign == null)
-                {
-                    return new BaseResponseDto<CampaignDto>
-                    {
-                        Success = false,
-                        Message = "Campaign not found"
-                    };
-                }
+            campaign.IsActive = false;
+            campaign.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                campaign.Title = campaignDto.Title;
-                campaign.Subtitle = campaignDto.Subtitle;
-                campaign.Description = campaignDto.Description;
-                campaign.ButtonText = campaignDto.ButtonText;
-                campaign.Discount = campaignDto.Discount;
-                campaign.IsActive = campaignDto.IsActive;
-                campaign.ImageUrl = campaignDto.ImageUrl;
-                campaign.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                campaignDto.Id = campaign.Id;
-                campaignDto.CreatedAt = campaign.CreatedAt;
-                campaignDto.UpdatedAt = campaign.UpdatedAt;
-
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = true,
-                    Data = campaignDto,
-                    Message = "Campaign updated successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating campaign {CampaignId}", id);
-                return new BaseResponseDto<CampaignDto>
-                {
-                    Success = false,
-                    Message = "Error updating campaign"
-                };
-            }
+            return BaseResponseDto<string>.SuccessResult("Campaign deleted successfully", "Campaign deleted successfully");
         }
 
-        public async Task<BaseResponseDto<bool>> DeleteCampaignAsync(int id)
+        private static BaseResponseDto<T> CampaignNotFound<T>() =>
+            BaseResponseDto<T>.NotFound("Campaign not found", ErrorCodes.CampaignNotFound);
+
+        private static BaseResponseDto<CampaignDto> InvalidDateRange() =>
+            BaseResponseDto<CampaignDto>.Fail("End date must be on or after the start date", ErrorCodes.InvalidDateRange);
+
+        private static CampaignDto ToDto(Campaign c) => new()
         {
-            try
-            {
-                var campaign = await _context.Campaigns
-                    .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
-
-                if (campaign == null)
-                {
-                    return new BaseResponseDto<bool>
-                    {
-                        Success = false,
-                        Message = "Campaign not found"
-                    };
-                }
-
-                campaign.IsActive = false;
-                campaign.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return new BaseResponseDto<bool>
-                {
-                    Success = true,
-                    Data = true,
-                    Message = "Campaign deleted successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting campaign {CampaignId}", id);
-                return new BaseResponseDto<bool>
-                {
-                    Success = false,
-                    Message = "Error deleting campaign"
-                };
-            }
-        }
-
-        public async Task<BaseResponseDto<bool>> ActivateCampaignAsync(int id)
-        {
-            try
-            {
-                var campaign = await _context.Campaigns
-                    .FirstOrDefaultAsync(c => c.Id == id);
-
-                if (campaign == null)
-                {
-                    return new BaseResponseDto<bool>
-                    {
-                        Success = false,
-                        Message = "Campaign not found"
-                    };
-                }
-
-                campaign.IsActive = true;
-                campaign.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return new BaseResponseDto<bool>
-                {
-                    Success = true,
-                    Data = true,
-                    Message = "Campaign activated successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error activating campaign {CampaignId}", id);
-                return new BaseResponseDto<bool>
-                {
-                    Success = false,
-                    Message = "Error activating campaign"
-                };
-            }
-        }
-
-        public async Task<BaseResponseDto<bool>> DeactivateCampaignAsync(int id)
-        {
-            try
-            {
-                var campaign = await _context.Campaigns
-                    .FirstOrDefaultAsync(c => c.Id == id);
-
-                if (campaign == null)
-                {
-                    return new BaseResponseDto<bool>
-                    {
-                        Success = false,
-                        Message = "Campaign not found"
-                    };
-                }
-
-                campaign.IsActive = false;
-                campaign.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return new BaseResponseDto<bool>
-                {
-                    Success = true,
-                    Data = true,
-                    Message = "Campaign deactivated successfully"
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deactivating campaign {CampaignId}", id);
-                return new BaseResponseDto<bool>
-                {
-                    Success = false,
-                    Message = "Error deactivating campaign"
-                };
-            }
-        }
+            Id = c.Id,
+            Title = c.Title,
+            Subtitle = c.Subtitle,
+            Description = c.Description,
+            Discount = c.Discount,
+            ImageUrl = c.ImageUrl,
+            BackgroundColor = c.BackgroundColor,
+            TimeLeft = c.TimeLeft,
+            ButtonText = c.ButtonText,
+            ButtonHref = c.ButtonHref,
+            IsActive = c.IsActive,
+            StartDate = c.StartDate,
+            EndDate = c.EndDate,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt
+        };
     }
 }

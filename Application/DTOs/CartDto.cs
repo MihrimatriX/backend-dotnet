@@ -26,23 +26,23 @@ namespace EcommerceBackend.Application.DTOs
         public bool IsAvailable { get; set; }
     }
 
+    /// <summary>Miktar mevcut satıra eklenir; <c>quantity ≤ 0</c> → 400 <c>INVALID_QUANTITY</c> (servis kuralı).</summary>
     public class AddToCartDto
     {
         [Required(ErrorMessage = "Product ID is required")]
         public int ProductId { get; set; }
 
         [Required(ErrorMessage = "Quantity is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "Quantity must be at least 1")]
         public int Quantity { get; set; }
     }
 
+    /// <summary>Miktarı ayarlar; <c>quantity ≤ 0</c> satırı siler.</summary>
     public class UpdateCartItemDto
     {
         [Required(ErrorMessage = "Product ID is required")]
         public int ProductId { get; set; }
 
         [Required(ErrorMessage = "Quantity is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "Quantity must be at least 1")]
         public int Quantity { get; set; }
     }
 }

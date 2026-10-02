@@ -40,8 +40,9 @@ namespace EcommerceBackend.Application.DTOs
         [StringLength(20, ErrorMessage = "Postal code cannot exceed 20 characters")]
         public string PostalCode { get; set; } = string.Empty;
 
+        /// <summary>Boş gönderilirse "Turkey".</summary>
         [StringLength(100, ErrorMessage = "Country cannot exceed 100 characters")]
-        public string Country { get; set; } = "Turkey";
+        public string? Country { get; set; } = "Turkey";
 
         public bool IsDefault { get; set; } = false;
 
@@ -71,10 +72,12 @@ namespace EcommerceBackend.Application.DTOs
         [StringLength(20, ErrorMessage = "Postal code cannot exceed 20 characters")]
         public string PostalCode { get; set; } = string.Empty;
 
+        /// <summary>Boş gönderilirse "Turkey".</summary>
         [StringLength(100, ErrorMessage = "Country cannot exceed 100 characters")]
-        public string Country { get; set; } = string.Empty;
+        public string? Country { get; set; }
 
-        public bool IsDefault { get; set; }
+        /// <summary>Gönderilmezse (null) değişmez.</summary>
+        public bool? IsDefault { get; set; }
 
         [StringLength(20, ErrorMessage = "Phone number cannot exceed 20 characters")]
         public string? PhoneNumber { get; set; }

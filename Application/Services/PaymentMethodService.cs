@@ -1,9 +1,8 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace EcommerceBackend.Application.Services
 {
@@ -18,334 +17,174 @@ namespace EcommerceBackend.Application.Services
 
         public async Task<BaseResponseDto<List<PaymentMethodDto>>> GetUserPaymentMethodsAsync(int userId)
         {
-            try
-            {
-                var paymentMethods = await _context.PaymentMethods
-                    .Where(pm => pm.UserId == userId && pm.IsActive)
-                    .OrderByDescending(pm => pm.IsDefault)
-                    .ThenByDescending(pm => pm.CreatedAt)
-                    .Select(pm => new PaymentMethodDto
-                    {
-                        Id = pm.Id,
-                        UserId = pm.UserId,
-                        Type = pm.Type,
-                        CardHolderName = pm.CardHolderName,
-                        CardNumber = MaskCardNumber(pm.CardNumber),
-                        ExpiryMonth = pm.ExpiryMonth,
-                        ExpiryYear = pm.ExpiryYear,
-                        BankName = pm.BankName,
-                        AccountNumber = pm.AccountNumber != null ? MaskAccountNumber(pm.AccountNumber) : null,
-                        AccountHolderName = pm.AccountHolderName,
-                        IsDefault = pm.IsDefault,
-                        IsActive = pm.IsActive,
-                        CreatedAt = pm.CreatedAt,
-                        UpdatedAt = pm.UpdatedAt
-                    })
-                    .ToListAsync();
+            var paymentMethods = await _context.PaymentMethods
+                .AsNoTracking()
+                .Where(pm => pm.UserId == userId && pm.IsActive)
+                .OrderByDescending(pm => pm.IsDefault)
+                .ThenByDescending(pm => pm.CreatedAt)
+                .ThenByDescending(pm => pm.Id)
+                .ToListAsync();
 
-                return BaseResponseDto<List<PaymentMethodDto>>.SuccessResult("Payment methods retrieved successfully", paymentMethods);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<PaymentMethodDto>>.ErrorResult($"Error retrieving payment methods: {ex.Message}");
-            }
+            return BaseResponseDto<List<PaymentMethodDto>>.SuccessResult(
+                "Payment methods retrieved successfully",
+                paymentMethods.Select(ToDto).ToList());
         }
 
         public async Task<BaseResponseDto<PaymentMethodDto>> GetPaymentMethodByIdAsync(int paymentMethodId, int userId)
         {
-            try
-            {
-                var paymentMethod = await _context.PaymentMethods
-                    .Where(pm => pm.Id == paymentMethodId && pm.UserId == userId && pm.IsActive)
-                    .Select(pm => new PaymentMethodDto
-                    {
-                        Id = pm.Id,
-                        UserId = pm.UserId,
-                        Type = pm.Type,
-                        CardHolderName = pm.CardHolderName,
-                        CardNumber = MaskCardNumber(pm.CardNumber),
-                        ExpiryMonth = pm.ExpiryMonth,
-                        ExpiryYear = pm.ExpiryYear,
-                        BankName = pm.BankName,
-                        AccountNumber = pm.AccountNumber != null ? MaskAccountNumber(pm.AccountNumber) : null,
-                        AccountHolderName = pm.AccountHolderName,
-                        IsDefault = pm.IsDefault,
-                        IsActive = pm.IsActive,
-                        CreatedAt = pm.CreatedAt,
-                        UpdatedAt = pm.UpdatedAt
-                    })
-                    .FirstOrDefaultAsync();
-
-                if (paymentMethod == null)
-                {
-                    return BaseResponseDto<PaymentMethodDto>.ErrorResult("Payment method not found");
-                }
-
-                return BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method retrieved successfully", paymentMethod);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<PaymentMethodDto>.ErrorResult($"Error retrieving payment method: {ex.Message}");
-            }
+            var paymentMethod = await FindOwnedAsync(paymentMethodId, userId);
+            return paymentMethod == null
+                ? PaymentMethodNotFound<PaymentMethodDto>()
+                : BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method retrieved successfully", ToDto(paymentMethod));
         }
 
-        public async Task<BaseResponseDto<PaymentMethodDto>> CreatePaymentMethodAsync(int userId, CreatePaymentMethodDto createPaymentMethodDto)
+        public async Task<BaseResponseDto<PaymentMethodDto>> CreatePaymentMethodAsync(int userId, CreatePaymentMethodDto dto)
         {
-            try
+            var digits = PaymentMethodValidator.NormalizeCardNumber(dto.CardNumber);
+            if (digits == null)
+                return InvalidCardNumber();
+
+            if (PaymentMethodValidator.IsExpired(dto.ExpiryMonth, dto.ExpiryYear, DateTime.UtcNow))
+                return CardExpired();
+
+            if (dto.IsDefault)
+                await ClearDefaultAsync(userId, exceptId: null);
+
+            var paymentMethod = new PaymentMethod
             {
-                // If this is set as default, remove default from other payment methods
-                if (createPaymentMethodDto.IsDefault)
-                {
-                    var existingDefaultPaymentMethods = await _context.PaymentMethods
-                        .Where(pm => pm.UserId == userId && pm.IsDefault && pm.IsActive)
-                        .ToListAsync();
+                UserId = userId,
+                Type = dto.Type,
+                CardHolderName = dto.CardHolderName,
+                CardNumber = PaymentMethodValidator.MaskCardNumber(digits),
+                ExpiryMonth = dto.ExpiryMonth,
+                ExpiryYear = dto.ExpiryYear,
+                BankName = dto.BankName,
+                AccountNumber = PaymentMethodValidator.MaskAccountNumber(dto.AccountNumber),
+                AccountHolderName = dto.AccountHolderName,
+                IsDefault = dto.IsDefault,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                    foreach (var existingPaymentMethod in existingDefaultPaymentMethods)
-                    {
-                        existingPaymentMethod.IsDefault = false;
-                        existingPaymentMethod.UpdatedAt = DateTime.UtcNow;
-                    }
-                }
+            _context.PaymentMethods.Add(paymentMethod);
+            await _context.SaveChangesAsync();
 
-                var paymentMethod = new PaymentMethod
-                {
-                    UserId = userId,
-                    Type = createPaymentMethodDto.Type,
-                    CardHolderName = createPaymentMethodDto.CardHolderName,
-                    CardNumber = EncryptCardNumber(createPaymentMethodDto.CardNumber),
-                    ExpiryMonth = createPaymentMethodDto.ExpiryMonth,
-                    ExpiryYear = createPaymentMethodDto.ExpiryYear,
-                    Cvv = createPaymentMethodDto.Cvv != null ? EncryptCvv(createPaymentMethodDto.Cvv) : null,
-                    BankName = createPaymentMethodDto.BankName,
-                    AccountNumber = createPaymentMethodDto.AccountNumber != null ? EncryptAccountNumber(createPaymentMethodDto.AccountNumber) : null,
-                    AccountHolderName = createPaymentMethodDto.AccountHolderName,
-                    IsDefault = createPaymentMethodDto.IsDefault,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _context.PaymentMethods.Add(paymentMethod);
-                await _context.SaveChangesAsync();
-
-                var paymentMethodDto = new PaymentMethodDto
-                {
-                    Id = paymentMethod.Id,
-                    UserId = paymentMethod.UserId,
-                    Type = paymentMethod.Type,
-                    CardHolderName = paymentMethod.CardHolderName,
-                    CardNumber = MaskCardNumber(paymentMethod.CardNumber),
-                    ExpiryMonth = paymentMethod.ExpiryMonth,
-                    ExpiryYear = paymentMethod.ExpiryYear,
-                    BankName = paymentMethod.BankName,
-                    AccountNumber = paymentMethod.AccountNumber != null ? MaskAccountNumber(paymentMethod.AccountNumber) : null,
-                    AccountHolderName = paymentMethod.AccountHolderName,
-                    IsDefault = paymentMethod.IsDefault,
-                    IsActive = paymentMethod.IsActive,
-                    CreatedAt = paymentMethod.CreatedAt,
-                    UpdatedAt = paymentMethod.UpdatedAt
-                };
-
-                return BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method created successfully", paymentMethodDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<PaymentMethodDto>.ErrorResult($"Error creating payment method: {ex.Message}");
-            }
+            return BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method created successfully", ToDto(paymentMethod));
         }
 
-        public async Task<BaseResponseDto<PaymentMethodDto>> UpdatePaymentMethodAsync(int paymentMethodId, int userId, UpdatePaymentMethodDto updatePaymentMethodDto)
+        /// <summary>
+        /// <c>cardNumber</c> maskeli (<c>*</c> içeren) gelirse mevcut numara korunur; hesap numarası için de aynı kural.
+        /// </summary>
+        public async Task<BaseResponseDto<PaymentMethodDto>> UpdatePaymentMethodAsync(int paymentMethodId, int userId, UpdatePaymentMethodDto dto)
         {
-            try
+            var paymentMethod = await FindOwnedAsync(paymentMethodId, userId);
+            if (paymentMethod == null)
+                return PaymentMethodNotFound<PaymentMethodDto>();
+
+            string? newMaskedCard = null;
+            if (!PaymentMethodValidator.IsMasked(dto.CardNumber))
             {
-                var paymentMethod = await _context.PaymentMethods
-                    .Where(pm => pm.Id == paymentMethodId && pm.UserId == userId && pm.IsActive)
-                    .FirstOrDefaultAsync();
-
-                if (paymentMethod == null)
-                {
-                    return BaseResponseDto<PaymentMethodDto>.ErrorResult("Payment method not found");
-                }
-
-                // If this is set as default, remove default from other payment methods
-                if (updatePaymentMethodDto.IsDefault && !paymentMethod.IsDefault)
-                {
-                    var existingDefaultPaymentMethods = await _context.PaymentMethods
-                        .Where(pm => pm.UserId == userId && pm.IsDefault && pm.IsActive && pm.Id != paymentMethodId)
-                        .ToListAsync();
-
-                    foreach (var existingPaymentMethod in existingDefaultPaymentMethods)
-                    {
-                        existingPaymentMethod.IsDefault = false;
-                        existingPaymentMethod.UpdatedAt = DateTime.UtcNow;
-                    }
-                }
-
-                paymentMethod.Type = updatePaymentMethodDto.Type;
-                paymentMethod.CardHolderName = updatePaymentMethodDto.CardHolderName;
-                paymentMethod.CardNumber = EncryptCardNumber(updatePaymentMethodDto.CardNumber);
-                paymentMethod.ExpiryMonth = updatePaymentMethodDto.ExpiryMonth;
-                paymentMethod.ExpiryYear = updatePaymentMethodDto.ExpiryYear;
-                paymentMethod.Cvv = updatePaymentMethodDto.Cvv != null ? EncryptCvv(updatePaymentMethodDto.Cvv) : null;
-                paymentMethod.BankName = updatePaymentMethodDto.BankName;
-                paymentMethod.AccountNumber = updatePaymentMethodDto.AccountNumber != null ? EncryptAccountNumber(updatePaymentMethodDto.AccountNumber) : null;
-                paymentMethod.AccountHolderName = updatePaymentMethodDto.AccountHolderName;
-                paymentMethod.IsDefault = updatePaymentMethodDto.IsDefault;
-                paymentMethod.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                var paymentMethodDto = new PaymentMethodDto
-                {
-                    Id = paymentMethod.Id,
-                    UserId = paymentMethod.UserId,
-                    Type = paymentMethod.Type,
-                    CardHolderName = paymentMethod.CardHolderName,
-                    CardNumber = MaskCardNumber(paymentMethod.CardNumber),
-                    ExpiryMonth = paymentMethod.ExpiryMonth,
-                    ExpiryYear = paymentMethod.ExpiryYear,
-                    BankName = paymentMethod.BankName,
-                    AccountNumber = paymentMethod.AccountNumber != null ? MaskAccountNumber(paymentMethod.AccountNumber) : null,
-                    AccountHolderName = paymentMethod.AccountHolderName,
-                    IsDefault = paymentMethod.IsDefault,
-                    IsActive = paymentMethod.IsActive,
-                    CreatedAt = paymentMethod.CreatedAt,
-                    UpdatedAt = paymentMethod.UpdatedAt
-                };
-
-                return BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method updated successfully", paymentMethodDto);
+                var digits = PaymentMethodValidator.NormalizeCardNumber(dto.CardNumber);
+                if (digits == null)
+                    return InvalidCardNumber();
+                newMaskedCard = PaymentMethodValidator.MaskCardNumber(digits);
             }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<PaymentMethodDto>.ErrorResult($"Error updating payment method: {ex.Message}");
-            }
+
+            if (PaymentMethodValidator.IsExpired(dto.ExpiryMonth, dto.ExpiryYear, DateTime.UtcNow))
+                return CardExpired();
+
+            if (dto.IsDefault)
+                await ClearDefaultAsync(userId, exceptId: paymentMethodId);
+
+            paymentMethod.Type = dto.Type;
+            paymentMethod.CardHolderName = dto.CardHolderName;
+            if (newMaskedCard != null)
+                paymentMethod.CardNumber = newMaskedCard;
+            paymentMethod.ExpiryMonth = dto.ExpiryMonth;
+            paymentMethod.ExpiryYear = dto.ExpiryYear;
+            paymentMethod.BankName = dto.BankName;
+            if (!PaymentMethodValidator.IsMasked(dto.AccountNumber))
+                paymentMethod.AccountNumber = PaymentMethodValidator.MaskAccountNumber(dto.AccountNumber);
+            paymentMethod.AccountHolderName = dto.AccountHolderName;
+            paymentMethod.IsDefault = dto.IsDefault;
+            paymentMethod.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<PaymentMethodDto>.SuccessResult("Payment method updated successfully", ToDto(paymentMethod));
         }
 
         public async Task<BaseResponseDto<string>> DeletePaymentMethodAsync(int paymentMethodId, int userId)
         {
-            try
-            {
-                var paymentMethod = await _context.PaymentMethods
-                    .Where(pm => pm.Id == paymentMethodId && pm.UserId == userId && pm.IsActive)
-                    .FirstOrDefaultAsync();
+            var paymentMethod = await FindOwnedAsync(paymentMethodId, userId);
+            if (paymentMethod == null)
+                return PaymentMethodNotFound<string>();
 
-                if (paymentMethod == null)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Payment method not found");
-                }
+            paymentMethod.IsActive = false;
+            paymentMethod.IsDefault = false;
+            paymentMethod.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                paymentMethod.IsActive = false;
-                paymentMethod.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return BaseResponseDto<string>.SuccessResult("Payment method deleted successfully", "Payment method deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error deleting payment method: {ex.Message}");
-            }
+            return BaseResponseDto<string>.SuccessResult("Payment method deleted successfully", "Payment method deleted successfully");
         }
 
         public async Task<BaseResponseDto<PaymentMethodDto>> SetDefaultPaymentMethodAsync(int paymentMethodId, int userId)
         {
-            try
+            var paymentMethod = await FindOwnedAsync(paymentMethodId, userId);
+            if (paymentMethod == null)
+                return PaymentMethodNotFound<PaymentMethodDto>();
+
+            await ClearDefaultAsync(userId, exceptId: paymentMethodId);
+            paymentMethod.IsDefault = true;
+            paymentMethod.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<PaymentMethodDto>.SuccessResult("Default payment method set successfully", ToDto(paymentMethod));
+        }
+
+        /// <summary>Maskeli görünüm; eski hash kayıtları <c>**** **** **** ****</c> görünür.</summary>
+        public static PaymentMethodDto ToDto(PaymentMethod pm) => new()
+        {
+            Id = pm.Id,
+            UserId = pm.UserId,
+            Type = pm.Type,
+            CardHolderName = pm.CardHolderName,
+            CardNumber = PaymentMethodValidator.DisplayCardNumber(pm.CardNumber),
+            ExpiryMonth = pm.ExpiryMonth,
+            ExpiryYear = pm.ExpiryYear,
+            BankName = pm.BankName,
+            AccountNumber = PaymentMethodValidator.DisplayAccountNumber(pm.AccountNumber),
+            AccountHolderName = pm.AccountHolderName,
+            IsDefault = pm.IsDefault,
+            IsActive = pm.IsActive,
+            CreatedAt = pm.CreatedAt,
+            UpdatedAt = pm.UpdatedAt
+        };
+
+        private Task<PaymentMethod?> FindOwnedAsync(int paymentMethodId, int userId) =>
+            _context.PaymentMethods.FirstOrDefaultAsync(pm => pm.Id == paymentMethodId && pm.UserId == userId && pm.IsActive);
+
+        private async Task ClearDefaultAsync(int userId, int? exceptId)
+        {
+            var defaults = await _context.PaymentMethods
+                .Where(pm => pm.UserId == userId && pm.IsDefault && pm.IsActive && (exceptId == null || pm.Id != exceptId))
+                .ToListAsync();
+
+            foreach (var existing in defaults)
             {
-                var paymentMethod = await _context.PaymentMethods
-                    .Where(pm => pm.Id == paymentMethodId && pm.UserId == userId && pm.IsActive)
-                    .FirstOrDefaultAsync();
-
-                if (paymentMethod == null)
-                {
-                    return BaseResponseDto<PaymentMethodDto>.ErrorResult("Payment method not found");
-                }
-
-                // Remove default from other payment methods
-                var existingDefaultPaymentMethods = await _context.PaymentMethods
-                    .Where(pm => pm.UserId == userId && pm.IsDefault && pm.IsActive && pm.Id != paymentMethodId)
-                    .ToListAsync();
-
-                foreach (var existingPaymentMethod in existingDefaultPaymentMethods)
-                {
-                    existingPaymentMethod.IsDefault = false;
-                    existingPaymentMethod.UpdatedAt = DateTime.UtcNow;
-                }
-
-                paymentMethod.IsDefault = true;
-                paymentMethod.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                var paymentMethodDto = new PaymentMethodDto
-                {
-                    Id = paymentMethod.Id,
-                    UserId = paymentMethod.UserId,
-                    Type = paymentMethod.Type,
-                    CardHolderName = paymentMethod.CardHolderName,
-                    CardNumber = MaskCardNumber(paymentMethod.CardNumber),
-                    ExpiryMonth = paymentMethod.ExpiryMonth,
-                    ExpiryYear = paymentMethod.ExpiryYear,
-                    BankName = paymentMethod.BankName,
-                    AccountNumber = paymentMethod.AccountNumber != null ? MaskAccountNumber(paymentMethod.AccountNumber) : null,
-                    AccountHolderName = paymentMethod.AccountHolderName,
-                    IsDefault = paymentMethod.IsDefault,
-                    IsActive = paymentMethod.IsActive,
-                    CreatedAt = paymentMethod.CreatedAt,
-                    UpdatedAt = paymentMethod.UpdatedAt
-                };
-
-                return BaseResponseDto<PaymentMethodDto>.SuccessResult("Default payment method set successfully", paymentMethodDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<PaymentMethodDto>.ErrorResult($"Error setting default payment method: {ex.Message}");
+                existing.IsDefault = false;
+                existing.UpdatedAt = DateTime.UtcNow;
             }
         }
 
-        private string MaskCardNumber(string cardNumber)
-        {
-            if (string.IsNullOrEmpty(cardNumber) || cardNumber.Length < 4)
-                return cardNumber;
+        private static BaseResponseDto<T> PaymentMethodNotFound<T>() =>
+            BaseResponseDto<T>.NotFound("Payment method not found", ErrorCodes.PaymentMethodNotFound);
 
-            return "**** **** **** " + cardNumber.Substring(cardNumber.Length - 4);
-        }
+        private static BaseResponseDto<PaymentMethodDto> InvalidCardNumber() =>
+            BaseResponseDto<PaymentMethodDto>.Fail("Geçersiz kart numarası.", ErrorCodes.InvalidCardNumber);
 
-        private string MaskAccountNumber(string accountNumber)
-        {
-            if (string.IsNullOrEmpty(accountNumber) || accountNumber.Length < 4)
-                return accountNumber;
-
-            return "****" + accountNumber.Substring(accountNumber.Length - 4);
-        }
-
-        private string EncryptCardNumber(string cardNumber)
-        {
-            // Simple encryption for demo purposes - in production use proper encryption
-            using (var sha256 = SHA256.Create())
-            {
-                var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(cardNumber + "salt"));
-                return Convert.ToBase64String(hashedBytes);
-            }
-        }
-
-        private string EncryptCvv(string cvv)
-        {
-            // Simple encryption for demo purposes - in production use proper encryption
-            using (var sha256 = SHA256.Create())
-            {
-                var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(cvv + "salt"));
-                return Convert.ToBase64String(hashedBytes);
-            }
-        }
-
-        private string EncryptAccountNumber(string accountNumber)
-        {
-            // Simple encryption for demo purposes - in production use proper encryption
-            using (var sha256 = SHA256.Create())
-            {
-                var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(accountNumber + "salt"));
-                return Convert.ToBase64String(hashedBytes);
-            }
-        }
+        private static BaseResponseDto<PaymentMethodDto> CardExpired() =>
+            BaseResponseDto<PaymentMethodDto>.Fail("Kartın son kullanma tarihi geçmiş.", ErrorCodes.CardExpired);
     }
 }

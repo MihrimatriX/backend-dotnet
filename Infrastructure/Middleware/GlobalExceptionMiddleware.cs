@@ -1,20 +1,15 @@
-using System.Net;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using EcommerceBackend.Application.DTOs;
-using EcommerceBackend.Infrastructure.Logging;
+using EcommerceBackend.Application.Common;
+using EcommerceBackend.Infrastructure.Web;
 using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceBackend.Infrastructure.Middleware;
 
+/// <summary>
+/// İşlenmeyen istisnaları sözleşme zarfına çevirir (§1.2). <c>error</c> alanı yalnızca geliştirmede doldurulur.
+/// </summary>
 public sealed class GlobalExceptionMiddleware
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
     private readonly IHostEnvironment _env;
@@ -43,34 +38,27 @@ public sealed class GlobalExceptionMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        var correlationId = context.Items[CorrelationIdConstants.HttpContextItemKey] as string
-            ?? context.TraceIdentifier;
-        var traceForClient = correlationId;
+        var correlationId = context.GetCorrelationId();
 
-        if (exception is OperationCanceledException)
+        if (exception is OperationCanceledException && context.RequestAborted.IsCancellationRequested)
         {
             _logger.LogInformation(
-                "İstek iptal edildi veya zaman aşımı: {Method} {Path} — {CorrelationId}",
+                "İstek iptal edildi: {Method} {Path} — {CorrelationId}",
                 context.Request.Method,
                 context.Request.Path.Value,
                 correlationId);
             if (!context.Response.HasStarted)
             {
-                context.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
-                context.Response.ContentType = "application/json";
-                var body = new BaseResponseDto<object>
-                {
-                    Success = false,
-                    Message = "İstek iptal edildi.",
-                    ErrorCode = "REQUEST_CANCELLED",
-                    TraceId = traceForClient,
-                };
-                await context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonOptions));
+                await ApiErrorResponse.WriteAsync(
+                    context,
+                    StatusCodes.Status499ClientClosedRequest,
+                    ErrorCodes.RequestCancelled,
+                    "İstek iptal edildi.");
             }
             return;
         }
 
-        var (status, response, logLevel) = MapException(exception, traceForClient);
+        var (status, code, message, logLevel) = Map(exception);
 
         _logger.Log(
             logLevel,
@@ -84,118 +72,33 @@ public sealed class GlobalExceptionMiddleware
 
         if (context.Response.HasStarted)
         {
-            _logger.LogWarning(
-                "Yanıt başladığı için hata gövdesi yazılamıyor. {CorrelationId}",
-                correlationId);
+            _logger.LogWarning("Yanıt başladığı için hata gövdesi yazılamıyor. {CorrelationId}", correlationId);
             return;
         }
 
-        context.Response.ContentType = "application/json";
-        context.Response.StatusCode = status;
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
+        var detail = _env.IsDevelopment() ? (exception.InnerException ?? exception).Message : null;
+        // Güvenlik başlıkları korunur; yalnızca yarım kalmış (tamponlanmış) gövde atılır.
+        if (context.Response.Body.CanSeek)
+            context.Response.Body.SetLength(0);
+        context.Response.Headers.ContentLength = null;
+        await ApiErrorResponse.WriteAsync(context, status, code, message, detail);
     }
 
-    private (int Status, BaseResponseDto<object> Body, LogLevel Level) MapException(
-        Exception exception,
-        string traceForClient)
+    private static (int Status, string Code, string Message, LogLevel Level) Map(Exception exception) => exception switch
     {
-        var showDetails = _env.IsDevelopment();
-
-        switch (exception)
-        {
-            case ArgumentNullException:
-            case ArgumentException:
-                return (
-                    (int)HttpStatusCode.BadRequest,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Geçersiz istek.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "BAD_REQUEST",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Warning);
-
-            case UnauthorizedAccessException:
-                return (
-                    (int)HttpStatusCode.Unauthorized,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Yetkisiz erişim.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "UNAUTHORIZED",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Warning);
-
-            case KeyNotFoundException:
-                return (
-                    (int)HttpStatusCode.NotFound,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Kaynak bulunamadı.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "NOT_FOUND",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Information);
-
-            case InvalidOperationException:
-                return (
-                    (int)HttpStatusCode.BadRequest,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "İşlem geçersiz.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "INVALID_OPERATION",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Warning);
-
-            case DbUpdateConcurrencyException:
-                return (
-                    (int)HttpStatusCode.Conflict,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Kayıt başka bir işlem tarafından değiştirildi. Tekrar deneyin.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "CONCURRENCY_CONFLICT",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Warning);
-
-            case DbUpdateException dbEx:
-                return (
-                    (int)HttpStatusCode.Conflict,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Veritabanı kısıtı veya güncelleme hatası.",
-                        Error = showDetails ? dbEx.InnerException?.Message ?? dbEx.Message : null,
-                        ErrorCode = "DATABASE_UPDATE",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Error);
-
-            default:
-                return (
-                    (int)HttpStatusCode.InternalServerError,
-                    new BaseResponseDto<object>
-                    {
-                        Success = false,
-                        Message = "Beklenmeyen bir hata oluştu. Destek için traceId değerini iletin.",
-                        Error = showDetails ? exception.Message : null,
-                        ErrorCode = "INTERNAL_ERROR",
-                        TraceId = traceForClient,
-                    },
-                    LogLevel.Error);
-        }
-    }
+        BadHttpRequestException bad => (bad.StatusCode, ErrorCodes.BadRequest, ErrorMessages.BadRequest, LogLevel.Warning),
+        JsonException or FormatException or ArgumentException =>
+            (StatusCodes.Status400BadRequest, ErrorCodes.BadRequest, ErrorMessages.BadRequest, LogLevel.Warning),
+        UnauthorizedAccessException =>
+            (StatusCodes.Status401Unauthorized, ErrorCodes.Unauthorized, ErrorMessages.Unauthorized, LogLevel.Warning),
+        KeyNotFoundException =>
+            (StatusCodes.Status404NotFound, ErrorCodes.NotFound, ErrorMessages.NotFound, LogLevel.Information),
+        DbUpdateConcurrencyException =>
+            (StatusCodes.Status409Conflict, ErrorCodes.Conflict, ErrorMessages.Conflict, LogLevel.Warning),
+        DbUpdateException =>
+            (StatusCodes.Status409Conflict, ErrorCodes.Conflict, "Kayıt veritabanı kısıtı nedeniyle kaydedilemedi.", LogLevel.Error),
+        _ => (StatusCodes.Status500InternalServerError, ErrorCodes.InternalError, ErrorMessages.InternalError, LogLevel.Error),
+    };
 }
 
 public static class GlobalExceptionMiddlewareExtensions

@@ -13,101 +13,28 @@ namespace EcommerceBackend.Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Favorite>> GetByUserIdAsync(int userId)
-        {
-            return await _context.Favorites
+        public Task<List<Favorite>> GetUserFavoritesAsync(int userId) =>
+            _context.Favorites
+                .AsNoTracking()
                 .Where(f => f.UserId == userId && f.IsActive)
                 .Include(f => f.Product)
                 .ThenInclude(p => p.Category)
                 .OrderByDescending(f => f.CreatedAt)
+                .ThenByDescending(f => f.Id)
                 .ToListAsync();
-        }
 
-        public async Task<Favorite?> GetByUserAndProductAsync(int userId, int productId)
-        {
-            return await _context.Favorites
-                .Where(f => f.UserId == userId && f.ProductId == productId && f.IsActive)
+        public Task<Favorite?> GetUserFavoriteAsync(int userId, int productId, bool includeInactive = false) =>
+            _context.Favorites
+                .Where(f => f.UserId == userId && f.ProductId == productId && (includeInactive || f.IsActive))
                 .FirstOrDefaultAsync();
-        }
 
-        public async Task<Favorite> AddAsync(Favorite favorite)
+        public async Task AddAsync(Favorite favorite)
         {
             _context.Favorites.Add(favorite);
             await _context.SaveChangesAsync();
-            return favorite;
         }
 
-        public async Task<bool> RemoveAsync(int userId, int productId)
-        {
-            var favorite = await _context.Favorites
-                .Where(f => f.UserId == userId && f.ProductId == productId && f.IsActive)
-                .FirstOrDefaultAsync();
-
-            if (favorite == null)
-                return false;
-
-            favorite.IsActive = false;
-            favorite.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        public async Task<bool> ExistsAsync(int userId, int productId)
-        {
-            return await _context.Favorites
-                .AnyAsync(f => f.UserId == userId && f.ProductId == productId && f.IsActive);
-        }
-
-        public async Task<int> GetCountByUserIdAsync(int userId)
-        {
-            return await _context.Favorites
-                .CountAsync(f => f.UserId == userId && f.IsActive);
-        }
-
-        public async Task<List<Favorite>> GetUserFavoritesAsync(int userId)
-        {
-            return await _context.Favorites
-                .Where(f => f.UserId == userId && f.IsActive)
-                .Include(f => f.Product)
-                .ThenInclude(p => p.Category)
-                .OrderByDescending(f => f.CreatedAt)
-                .ToListAsync();
-        }
-
-        public async Task<Favorite?> GetUserFavoriteAsync(int userId, int productId)
-        {
-            return await _context.Favorites
-                .Where(f => f.UserId == userId && f.ProductId == productId && f.IsActive)
-                .Include(f => f.Product)
-                .FirstOrDefaultAsync();
-        }
-
-        public async Task<Favorite> CreateAsync(Favorite favorite)
-        {
-            favorite.CreatedAt = DateTime.UtcNow;
-            favorite.UpdatedAt = DateTime.UtcNow;
-
-            _context.Favorites.Add(favorite);
-            await _context.SaveChangesAsync();
-            return favorite;
-        }
-
-        public async Task<bool> DeleteAsync(int userId, int productId)
-        {
-            var favorite = await _context.Favorites
-                .Where(f => f.UserId == userId && f.ProductId == productId && f.IsActive)
-                .FirstOrDefaultAsync();
-
-            if (favorite == null)
-                return false;
-
-            favorite.IsActive = false;
-            favorite.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
-        public async Task<bool> ClearUserFavoritesAsync(int userId)
+        public async Task ClearUserFavoritesAsync(int userId)
         {
             var favorites = await _context.Favorites
                 .Where(f => f.UserId == userId && f.IsActive)
@@ -120,7 +47,8 @@ namespace EcommerceBackend.Infrastructure.Repositories
             }
 
             await _context.SaveChangesAsync();
-            return true;
         }
+
+        public Task SaveChangesAsync() => _context.SaveChangesAsync();
     }
 }

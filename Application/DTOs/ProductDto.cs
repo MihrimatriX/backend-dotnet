@@ -2,6 +2,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace EcommerceBackend.Application.DTOs
 {
+    /// <summary>
+    /// Ürün (§3). Aynı şekil yönetici oluşturma/güncelleme gövdesi olarak da kullanılır; okuma alanları
+    /// (<c>categoryName</c>, <c>averageRating</c>, tarihler …) girişte yok sayılır.
+    /// </summary>
     public class ProductDto
     {
         public int Id { get; set; }
@@ -10,6 +14,7 @@ namespace EcommerceBackend.Application.DTOs
         [StringLength(200, MinimumLength = 2, ErrorMessage = "Product name must be between 2 and 200 characters")]
         public string ProductName { get; set; } = string.Empty;
 
+        /// <summary>İndirimsiz liste fiyatı.</summary>
         [Required(ErrorMessage = "Unit price is required")]
         [Range(0.01, double.MaxValue, ErrorMessage = "Unit price must be greater than 0")]
         public decimal UnitPrice { get; set; }
@@ -27,20 +32,28 @@ namespace EcommerceBackend.Application.DTOs
 
         public string? CategoryName { get; set; }
 
+        public int? SubCategoryId { get; set; }
+
+        public string? SubCategoryName { get; set; }
+
         [StringLength(1000, ErrorMessage = "Description cannot exceed 1000 characters")]
         public string? Description { get; set; }
 
         public string? ImageUrl { get; set; }
 
+        /// <summary>Yüzde indirim (0–100).</summary>
         [Range(0, 100, ErrorMessage = "Discount must be between 0 and 100")]
         public int Discount { get; set; } = 0;
 
         public bool IsActive { get; set; } = true;
 
-        // Review information
-        public double? AverageRating { get; set; }
-        public int? TotalReviews { get; set; }
+        /// <summary>Aktif yorumların ortalaması (1 ondalık, yorum yoksa 0).</summary>
+        public double AverageRating { get; set; }
+
+        public int TotalReviews { get; set; }
+
         public DateTime CreatedAt { get; set; }
+
         public DateTime UpdatedAt { get; set; }
     }
 }

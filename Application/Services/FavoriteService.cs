@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Repositories;
@@ -17,115 +18,82 @@ namespace EcommerceBackend.Application.Services
 
         public async Task<BaseResponseDto<List<FavoriteDto>>> GetUserFavoritesAsync(int userId)
         {
-            try
-            {
-                var favorites = await _favoriteRepository.GetUserFavoritesAsync(userId);
-                var favoriteDtos = favorites.Select(ConvertToDto).ToList();
-
-                return BaseResponseDto<List<FavoriteDto>>.SuccessResult("Favorites retrieved successfully", favoriteDtos);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<FavoriteDto>>.ErrorResult($"Error retrieving favorites: {ex.Message}");
-            }
+            var favorites = await _favoriteRepository.GetUserFavoritesAsync(userId);
+            return BaseResponseDto<List<FavoriteDto>>.SuccessResult(
+                "Favorites retrieved successfully",
+                favorites.Select(f => ToDto(f, f.Product)).ToList());
         }
 
         public async Task<BaseResponseDto<FavoriteDto>> AddToFavoritesAsync(int userId, AddToFavoritesDto addToFavoritesDto)
         {
-            try
+            var product = await _productRepository.GetActiveByIdAsync(addToFavoritesDto.ProductId);
+            if (product == null)
+                return BaseResponseDto<FavoriteDto>.Fail("Product not found or inactive", ErrorCodes.ProductNotFound);
+
+            // (kullanıcı, ürün) benzersiz indeksli; daha önce kaldırılmış satır yeniden etkinleştirilir.
+            var favorite = await _favoriteRepository.GetUserFavoriteAsync(userId, product.Id, includeInactive: true);
+            if (favorite is { IsActive: true })
+                return BaseResponseDto<FavoriteDto>.Fail("Product already in favorites", ErrorCodes.AlreadyFavorite);
+
+            if (favorite == null)
             {
-                // Check if product exists and is active
-                var product = await _productRepository.GetByIdAsync(addToFavoritesDto.ProductId);
-                if (product == null || !product.IsActive)
-                {
-                    return BaseResponseDto<FavoriteDto>.ErrorResult("Product not found or inactive");
-                }
-
-                // Check if already in favorites
-                var existingFavorite = await _favoriteRepository.GetUserFavoriteAsync(userId, addToFavoritesDto.ProductId);
-                if (existingFavorite != null)
-                {
-                    return BaseResponseDto<FavoriteDto>.ErrorResult("Product already in favorites");
-                }
-
-                var favorite = new Favorite
+                favorite = new Favorite
                 {
                     UserId = userId,
-                    ProductId = addToFavoritesDto.ProductId,
-                    CreatedAt = DateTime.UtcNow
+                    ProductId = product.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
                 };
-
-                var createdFavorite = await _favoriteRepository.CreateAsync(favorite);
-                return BaseResponseDto<FavoriteDto>.SuccessResult("Product added to favorites", ConvertToDto(createdFavorite));
+                await _favoriteRepository.AddAsync(favorite);
             }
-            catch (Exception ex)
+            else
             {
-                return BaseResponseDto<FavoriteDto>.ErrorResult($"Error adding to favorites: {ex.Message}");
+                favorite.IsActive = true;
+                favorite.CreatedAt = DateTime.UtcNow;
+                favorite.UpdatedAt = DateTime.UtcNow;
+                await _favoriteRepository.SaveChangesAsync();
             }
+
+            return BaseResponseDto<FavoriteDto>.SuccessResult("Product added to favorites", ToDto(favorite, product));
         }
 
         public async Task<BaseResponseDto<string>> RemoveFromFavoritesAsync(int userId, int productId)
         {
-            try
-            {
-                var favorite = await _favoriteRepository.GetUserFavoriteAsync(userId, productId);
-                if (favorite == null)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Product not found in favorites");
-                }
+            var favorite = await _favoriteRepository.GetUserFavoriteAsync(userId, productId);
+            if (favorite == null)
+                return BaseResponseDto<string>.Fail("Product not found in favorites", ErrorCodes.NotFavorite);
 
-                await _favoriteRepository.DeleteAsync(userId, productId);
-                return BaseResponseDto<string>.SuccessResult("Product removed from favorites", "Product removed from favorites");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error removing from favorites: {ex.Message}");
-            }
+            favorite.IsActive = false;
+            favorite.UpdatedAt = DateTime.UtcNow;
+            await _favoriteRepository.SaveChangesAsync();
+
+            return BaseResponseDto<string>.SuccessResult("Product removed from favorites", "Product removed from favorites");
         }
 
         public async Task<BaseResponseDto<bool>> IsProductInFavoritesAsync(int userId, int productId)
         {
-            try
-            {
-                var favorite = await _favoriteRepository.GetUserFavoriteAsync(userId, productId);
-                var isInFavorites = favorite != null;
-
-                return BaseResponseDto<bool>.SuccessResult("Favorite status retrieved", isInFavorites);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<bool>.ErrorResult($"Error checking favorite status: {ex.Message}");
-            }
+            var favorite = await _favoriteRepository.GetUserFavoriteAsync(userId, productId);
+            return BaseResponseDto<bool>.SuccessResult("Favorite status retrieved", favorite != null);
         }
 
         public async Task<BaseResponseDto<string>> ClearFavoritesAsync(int userId)
         {
-            try
-            {
-                await _favoriteRepository.ClearUserFavoritesAsync(userId);
-                return BaseResponseDto<string>.SuccessResult("Favorites cleared successfully", "Favorites cleared successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error clearing favorites: {ex.Message}");
-            }
+            await _favoriteRepository.ClearUserFavoritesAsync(userId);
+            return BaseResponseDto<string>.SuccessResult("Favorites cleared successfully", "Favorites cleared successfully");
         }
 
-        private FavoriteDto ConvertToDto(Favorite favorite)
+        private static FavoriteDto ToDto(Favorite favorite, Product? product) => new()
         {
-            return new FavoriteDto
-            {
-                Id = favorite.Id,
-                UserId = favorite.UserId,
-                ProductId = favorite.ProductId,
-                ProductName = favorite.Product?.ProductName ?? "",
-                ProductImageUrl = favorite.Product?.ImageUrl,
-                ProductPrice = favorite.Product?.UnitPrice ?? 0,
-                ProductDiscount = favorite.Product?.Discount,
-                ProductCategory = favorite.Product?.Category?.CategoryName,
-                ProductInStock = favorite.Product?.UnitInStock > 0,
-                CreatedAt = favorite.CreatedAt
-            };
-        }
+            Id = favorite.Id,
+            UserId = favorite.UserId,
+            ProductId = favorite.ProductId,
+            ProductName = product?.ProductName ?? string.Empty,
+            ProductImageUrl = product?.ImageUrl,
+            ProductPrice = product?.UnitPrice ?? 0,
+            ProductDiscount = product?.Discount,
+            ProductCategory = product?.Category?.CategoryName,
+            ProductInStock = product?.UnitInStock > 0,
+            CreatedAt = favorite.CreatedAt
+        };
     }
 }

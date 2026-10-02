@@ -32,6 +32,26 @@ namespace EcommerceBackend.Domain.Entities
 
         public int? PaymentMethodId { get; set; }
 
+        /// <summary>İstemcinin <c>Idempotency-Key</c> başlığı (kırpılmış, küçük harf); kullanıcı başına benzersiz.</summary>
+        [StringLength(128)]
+        public string? IdempotencyKey { get; set; }
+
+        [StringLength(50)]
+        public string? TrackingNumber { get; set; }
+
+        [StringLength(100)]
+        public string? Carrier { get; set; }
+
+        public DateTime? EstimatedDeliveryAt { get; set; }
+
+        [StringLength(500)]
+        public string? CancelReason { get; set; }
+
+        [StringLength(500)]
+        public string? ReturnReason { get; set; }
+
+        public DateTime? ReturnRequestedAt { get; set; }
+
         // Navigation properties
         public virtual User User { get; set; } = null!;
         public virtual PaymentMethod? PaymentMethod { get; set; }

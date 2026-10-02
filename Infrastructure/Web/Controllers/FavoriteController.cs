@@ -2,14 +2,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Application.Services;
-using System.Security.Claims;
 
 namespace EcommerceBackend.Infrastructure.Web.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class FavoriteController : ControllerBase
+    public class FavoriteController : ApiControllerBase
     {
         private readonly IFavoriteService _favoriteService;
 
@@ -19,65 +17,23 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<BaseResponseDto<List<FavoriteDto>>>> GetUserFavorites()
-        {
-            var currentUserId = GetCurrentUserId();
-            var result = await _favoriteService.GetUserFavoritesAsync(currentUserId);
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<List<FavoriteDto>>>> GetUserFavorites() =>
+            Respond(await _favoriteService.GetUserFavoritesAsync(CurrentUserId));
 
         [HttpPost("add")]
-        public async Task<ActionResult<BaseResponseDto<FavoriteDto>>> AddToFavorites([FromBody] AddToFavoritesDto addToFavoritesDto)
-        {
-            var currentUserId = GetCurrentUserId();
-            var result = await _favoriteService.AddToFavoritesAsync(currentUserId, addToFavoritesDto);
-            if (result.Success)
-            {
-                return Ok(result);
-            }
-            return BadRequest(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<FavoriteDto>>> AddToFavorites([FromBody] AddToFavoritesDto addToFavoritesDto) =>
+            Respond(await _favoriteService.AddToFavoritesAsync(CurrentUserId, addToFavoritesDto));
 
         [HttpDelete("remove/{productId}")]
-        public async Task<ActionResult<BaseResponseDto<string>>> RemoveFromFavorites(int productId)
-        {
-            var currentUserId = GetCurrentUserId();
-            var result = await _favoriteService.RemoveFromFavoritesAsync(currentUserId, productId);
-            if (result.Success)
-            {
-                return Ok(result);
-            }
-            return BadRequest(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<string>>> RemoveFromFavorites(int productId) =>
+            Respond(await _favoriteService.RemoveFromFavoritesAsync(CurrentUserId, productId));
 
         [HttpGet("check/{productId}")]
-        public async Task<ActionResult<BaseResponseDto<bool>>> IsProductInFavorites(int productId)
-        {
-            var currentUserId = GetCurrentUserId();
-            var result = await _favoriteService.IsProductInFavoritesAsync(currentUserId, productId);
-            return Ok(result);
-        }
+        public async Task<ActionResult<BaseResponseDto<bool>>> IsProductInFavorites(int productId) =>
+            Respond(await _favoriteService.IsProductInFavoritesAsync(CurrentUserId, productId));
 
         [HttpDelete("clear")]
-        public async Task<ActionResult<BaseResponseDto<string>>> ClearFavorites()
-        {
-            var currentUserId = GetCurrentUserId();
-            var result = await _favoriteService.ClearFavoritesAsync(currentUserId);
-            if (result.Success)
-            {
-                return Ok(result);
-            }
-            return BadRequest(result);
-        }
-
-        private int GetCurrentUserId()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-            throw new UnauthorizedAccessException("Invalid user ID");
-        }
+        public async Task<ActionResult<BaseResponseDto<string>>> ClearFavorites() =>
+            Respond(await _favoriteService.ClearFavoritesAsync(CurrentUserId));
     }
 }

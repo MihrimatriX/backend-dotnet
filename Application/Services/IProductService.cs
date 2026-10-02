@@ -6,10 +6,10 @@ namespace EcommerceBackend.Application.Services
     {
         Task<BaseResponseDto<PagedResultDto<ProductDto>>> GetProductsAsync(ProductFilterDto filterDto);
         Task<BaseResponseDto<ProductDto>> GetProductByIdAsync(int id);
-        Task<BaseResponseDto<IEnumerable<ProductDto>>> GetProductsByCategoryAsync(int categoryId);
-        Task<BaseResponseDto<IEnumerable<ProductDto>>> SearchProductsAsync(string searchTerm);
-        Task<BaseResponseDto<IEnumerable<ProductDto>>> GetFeaturedProductsAsync();
-        Task<BaseResponseDto<IEnumerable<ProductDto>>> GetDiscountedProductsAsync();
+        Task<BaseResponseDto<List<ProductDto>>> GetProductsByCategoryAsync(int categoryId);
+        Task<BaseResponseDto<List<ProductDto>>> SearchProductsAsync(string searchTerm);
+        Task<BaseResponseDto<List<ProductDto>>> GetFeaturedProductsAsync();
+        Task<BaseResponseDto<List<ProductDto>>> GetDiscountedProductsAsync();
         Task<BaseResponseDto<ProductDto>> CreateProductAsync(ProductDto productDto);
         Task<BaseResponseDto<ProductDto>> UpdateProductAsync(int id, ProductDto productDto);
         Task<BaseResponseDto<string>> DeleteProductAsync(int id);

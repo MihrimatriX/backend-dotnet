@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Application.Options;
 using EcommerceBackend.Domain.Entities;
@@ -10,52 +11,46 @@ namespace EcommerceBackend.Application.Services
     public class CartService : ICartService
     {
         private readonly ApplicationDbContext _context;
-        private readonly ILogger<CartService> _logger;
         private readonly CheckoutOptions _checkoutOptions;
 
-        public CartService(
-            ApplicationDbContext context,
-            ILogger<CartService> logger,
-            IOptions<CheckoutOptions> checkoutOptions)
+        public CartService(ApplicationDbContext context, IOptions<CheckoutOptions> checkoutOptions)
         {
             _context = context;
-            _logger = logger;
             _checkoutOptions = checkoutOptions.Value;
         }
 
+        /// <summary>
+        /// Sepet (§5.1): satır fiyatı = indirimli satış fiyatı; satır tutarı stokla sınırlı miktar üzerinden;
+        /// pasif ürünler gösterilmez.
+        /// </summary>
         private async Task<CartDto> BuildCartDtoAsync(int userId)
         {
             var rows = await _context.CartItems
                 .AsNoTracking()
                 .Include(c => c.Product)
                 .Where(c => c.UserId == userId && c.IsActive && c.Product.IsActive)
+                .OrderBy(c => c.CreatedAt)
+                .ThenBy(c => c.Id)
                 .ToListAsync();
 
-            var items = new List<CartItemDto>();
-            foreach (var row in rows)
+            var items = rows.Select(row =>
             {
-                var p = row.Product;
-                var unit = ProductPricing.EffectiveUnitPrice(p.UnitPrice, p.Discount);
-                var requested = row.Quantity;
-                var canFulfill = p.UnitInStock > 0;
-                var fulfilledQty = canFulfill ? Math.Min(requested, p.UnitInStock) : 0;
-                var isAvailable = canFulfill && fulfilledQty >= requested;
-
-                items.Add(new CartItemDto
+                var product = row.Product;
+                var unit = ProductPricing.EffectiveUnitPrice(product.UnitPrice, product.Discount);
+                var fulfilledQty = Math.Min(row.Quantity, Math.Max(0, product.UnitInStock));
+                return new CartItemDto
                 {
-                    ProductId = p.Id,
-                    ProductName = p.ProductName,
+                    ProductId = product.Id,
+                    ProductName = product.ProductName,
+                    ProductImageUrl = product.ImageUrl,
                     UnitPrice = unit,
-                    Quantity = requested,
+                    Quantity = row.Quantity,
                     TotalPrice = unit * fulfilledQty,
-                    ProductImageUrl = p.ImageUrl,
-                    IsAvailable = isAvailable,
-                });
-            }
+                    IsAvailable = product.UnitInStock > 0 && product.UnitInStock >= row.Quantity,
+                };
+            }).ToList();
 
-            var subtotal = items.Sum(i => i.TotalPrice);
-            var (_, shipping, grand) = ShippingQuote.Calculate(subtotal, _checkoutOptions);
-            var remaining = ShippingQuote.FreeShippingRemaining(subtotal, _checkoutOptions);
+            var (subtotal, shipping, grand) = ShippingQuote.Calculate(items.Sum(i => i.TotalPrice), _checkoutOptions);
 
             return new CartDto
             {
@@ -65,296 +60,116 @@ namespace EcommerceBackend.Application.Services
                 TotalAmount = subtotal,
                 ShippingFee = shipping,
                 GrandTotal = grand,
-                FreeShippingRemainingTry = remaining,
+                FreeShippingRemainingTry = ShippingQuote.FreeShippingRemaining(subtotal, _checkoutOptions),
             };
         }
 
-        public async Task<BaseResponseDto<CartDto>> GetCartAsync(int userId)
-        {
-            try
-            {
-                var cart = await BuildCartDtoAsync(userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = true,
-                    Data = cart,
-                    Message = "Sepet getirildi",
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving cart for user {UserId}", userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = false,
-                    Message = "Sepet yüklenemedi.",
-                    ErrorCode = "CART_ERROR",
-                };
-            }
-        }
+        public async Task<BaseResponseDto<CartDto>> GetCartAsync(int userId) =>
+            BaseResponseDto<CartDto>.SuccessResult("Sepet getirildi", await BuildCartDtoAsync(userId));
 
+        /// <summary>Miktar mevcut satıra eklenir ve stokla sınırlanır.</summary>
         public async Task<BaseResponseDto<CartDto>> AddToCartAsync(int userId, int productId, int quantity)
         {
-            try
+            if (quantity <= 0)
+                return BaseResponseDto<CartDto>.Fail("Adet 0'dan büyük olmalıdır.", ErrorCodes.InvalidQuantity);
+
+            var product = await _context.Products.FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
+            if (product == null)
+                return ProductUnavailable();
+
+            if (product.UnitInStock < 1)
+                return BaseResponseDto<CartDto>.Fail("Bu ürün stokta yok.", ErrorCodes.OutOfStock);
+
+            var line = await FindLineAsync(userId, productId);
+            var newQty = Math.Min((line?.Quantity ?? 0) + quantity, product.UnitInStock);
+
+            if (line == null)
             {
-                if (quantity <= 0)
+                _context.CartItems.Add(new CartItem
                 {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Adet 0'dan büyük olmalıdır.",
-                        ErrorCode = "INVALID_QUANTITY",
-                    };
-                }
-
-                var product = await _context.Products
-                    .FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
-
-                if (product == null)
-                {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Ürün bulunamadı veya satışta değil.",
-                        ErrorCode = "PRODUCT_NOT_FOUND",
-                    };
-                }
-
-                if (product.UnitInStock < 1)
-                {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Bu ürün stokta yok.",
-                        ErrorCode = "OUT_OF_STOCK",
-                    };
-                }
-
-                var line = await _context.CartItems.FirstOrDefaultAsync(c =>
-                    c.UserId == userId && c.ProductId == productId && c.IsActive);
-
-                var newQty = (line?.Quantity ?? 0) + quantity;
-                newQty = Math.Min(newQty, product.UnitInStock);
-
-                if (line == null)
-                {
-                    _context.CartItems.Add(new CartItem
-                    {
-                        UserId = userId,
-                        ProductId = productId,
-                        Quantity = newQty,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow,
-                    });
-                }
-                else
-                {
-                    line.Quantity = newQty;
-                    line.UpdatedAt = DateTime.UtcNow;
-                }
-
-                await _context.SaveChangesAsync();
-
-                var cart = await BuildCartDtoAsync(userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = true,
-                    Data = cart,
-                    Message = "Product added to cart successfully",
-                };
+                    UserId = userId,
+                    ProductId = productId,
+                    Quantity = newQty,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogError(ex, "Error adding product {ProductId} to cart for user {UserId}", productId, userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = false,
-                    Message = "Error adding product to cart",
-                };
+                line.Quantity = newQty;
+                line.UpdatedAt = DateTime.UtcNow;
             }
+
+            await _context.SaveChangesAsync();
+            return BaseResponseDto<CartDto>.SuccessResult("Product added to cart successfully", await BuildCartDtoAsync(userId));
         }
 
+        /// <summary>Miktarı ayarlar; <c>quantity ≤ 0</c> satırı siler.</summary>
         public async Task<BaseResponseDto<CartDto>> UpdateCartItemAsync(int userId, int productId, int quantity)
         {
-            try
+            if (quantity <= 0)
             {
-                if (quantity <= 0)
-                {
-                    await RemoveFromCartAsync(userId, productId);
-                    var afterRemove = await BuildCartDtoAsync(userId);
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = true,
-                        Data = afterRemove,
-                        Message = "Cart item removed",
-                    };
-                }
-
-                var product = await _context.Products
-                    .FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
-
-                if (product == null)
-                {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Ürün bulunamadı veya satışta değil.",
-                        ErrorCode = "PRODUCT_NOT_FOUND",
-                    };
-                }
-
-                if (product.UnitInStock < quantity)
-                {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Stokta yeterli ürün yok. Miktarı düşürün.",
-                        ErrorCode = "INSUFFICIENT_STOCK",
-                    };
-                }
-
-                var line = await _context.CartItems.FirstOrDefaultAsync(c =>
-                    c.UserId == userId && c.ProductId == productId && c.IsActive);
-
-                if (line == null)
-                {
-                    return new BaseResponseDto<CartDto>
-                    {
-                        Success = false,
-                        Message = "Bu ürün sepetinizde yok.",
-                        ErrorCode = "NOT_IN_CART",
-                    };
-                }
-
-                line.Quantity = quantity;
-                line.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-
-                var cart = await BuildCartDtoAsync(userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = true,
-                    Data = cart,
-                    Message = "Cart item updated successfully",
-                };
+                await RemoveLineAsync(userId, productId);
+                return BaseResponseDto<CartDto>.SuccessResult("Cart item removed", await BuildCartDtoAsync(userId));
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating cart item {ProductId} for user {UserId}", productId, userId);
-                return new BaseResponseDto<CartDto>
-                {
-                    Success = false,
-                    Message = "Error updating cart item",
-                };
-            }
+
+            var product = await _context.Products.FirstOrDefaultAsync(p => p.Id == productId && p.IsActive);
+            if (product == null)
+                return ProductUnavailable();
+
+            if (product.UnitInStock < quantity)
+                return BaseResponseDto<CartDto>.Fail("Stokta yeterli ürün yok. Miktarı düşürün.", ErrorCodes.InsufficientStock);
+
+            var line = await FindLineAsync(userId, productId);
+            if (line == null)
+                return BaseResponseDto<CartDto>.Fail("Bu ürün sepetinizde yok.", ErrorCodes.NotInCart);
+
+            line.Quantity = quantity;
+            line.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return BaseResponseDto<CartDto>.SuccessResult("Cart item updated successfully", await BuildCartDtoAsync(userId));
         }
 
+        /// <summary>İdempotent: satır yoksa da başarılıdır.</summary>
         public async Task<BaseResponseDto<bool>> RemoveFromCartAsync(int userId, int productId)
         {
-            try
-            {
-                var line = await _context.CartItems.FirstOrDefaultAsync(c =>
-                    c.UserId == userId && c.ProductId == productId && c.IsActive);
-
-                if (line != null)
-                {
-                    _context.CartItems.Remove(line);
-                    await _context.SaveChangesAsync();
-                }
-
-                return new BaseResponseDto<bool>
-                {
-                    Success = true,
-                    Data = true,
-                    Message = "Product removed from cart successfully",
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error removing product {ProductId} from cart for user {UserId}", productId, userId);
-                return new BaseResponseDto<bool>
-                {
-                    Success = false,
-                    Message = "Error removing product from cart",
-                };
-            }
+            await RemoveLineAsync(userId, productId);
+            return BaseResponseDto<bool>.SuccessResult("Product removed from cart successfully", true);
         }
 
         public async Task<BaseResponseDto<bool>> ClearCartAsync(int userId)
         {
-            try
+            var lines = await _context.CartItems.Where(c => c.UserId == userId).ToListAsync();
+            if (lines.Count > 0)
             {
-                var lines = await _context.CartItems
-                    .Where(c => c.UserId == userId)
-                    .ToListAsync();
-                if (lines.Count > 0)
-                {
-                    _context.CartItems.RemoveRange(lines);
-                    await _context.SaveChangesAsync();
-                }
+                _context.CartItems.RemoveRange(lines);
+                await _context.SaveChangesAsync();
+            }
 
-                return new BaseResponseDto<bool>
-                {
-                    Success = true,
-                    Data = true,
-                    Message = "Cart cleared successfully",
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error clearing cart for user {UserId}", userId);
-                return new BaseResponseDto<bool>
-                {
-                    Success = false,
-                    Message = "Error clearing cart",
-                };
-            }
+            return BaseResponseDto<bool>.SuccessResult("Cart cleared successfully", true);
         }
 
-        public async Task<BaseResponseDto<decimal>> GetCartTotalAsync(int userId)
+        public async Task<BaseResponseDto<decimal>> GetCartTotalAsync(int userId) =>
+            BaseResponseDto<decimal>.SuccessResult("Sepet toplamı (kargo dahil)", (await BuildCartDtoAsync(userId)).GrandTotal);
+
+        public async Task<BaseResponseDto<int>> GetCartItemCountAsync(int userId) =>
+            BaseResponseDto<int>.SuccessResult("Cart item count retrieved successfully", (await BuildCartDtoAsync(userId)).TotalItems);
+
+        private Task<CartItem?> FindLineAsync(int userId, int productId) =>
+            _context.CartItems.FirstOrDefaultAsync(c => c.UserId == userId && c.ProductId == productId && c.IsActive);
+
+        private async Task RemoveLineAsync(int userId, int productId)
         {
-            try
-            {
-                var cart = await BuildCartDtoAsync(userId);
-                return new BaseResponseDto<decimal>
-                {
-                    Success = true,
-                    Data = cart.GrandTotal,
-                    Message = "Sepet toplamı (kargo dahil)",
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting cart total for user {UserId}", userId);
-                return new BaseResponseDto<decimal>
-                {
-                    Success = false,
-                    Message = "Error getting cart total",
-                };
-            }
+            var line = await FindLineAsync(userId, productId);
+            if (line == null)
+                return;
+
+            _context.CartItems.Remove(line);
+            await _context.SaveChangesAsync();
         }
 
-        public async Task<BaseResponseDto<int>> GetCartItemCountAsync(int userId)
-        {
-            try
-            {
-                var cart = await BuildCartDtoAsync(userId);
-                return new BaseResponseDto<int>
-                {
-                    Success = true,
-                    Data = cart.TotalItems,
-                    Message = "Cart item count retrieved successfully",
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting cart count for user {UserId}", userId);
-                return new BaseResponseDto<int>
-                {
-                    Success = false,
-                    Message = "Error getting cart item count",
-                };
-            }
-        }
+        private static BaseResponseDto<CartDto> ProductUnavailable() =>
+            BaseResponseDto<CartDto>.Fail("Ürün bulunamadı veya satışta değil.", ErrorCodes.ProductNotFound);
     }
 }
