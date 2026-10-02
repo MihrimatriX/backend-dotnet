@@ -55,6 +55,18 @@ namespace EcommerceBackend.Application.DTOs
 
         public static BaseResponseDto<T> Forbidden(string message) => Fail(message, Common.ErrorCodes.Forbidden, 403);
 
+        // Henüz ApiControllerBase/Fail akışına taşınmamış servisler için uyumluluk kısayolları.
+        public static BaseResponseDto<T> SuccessResult(T data) => SuccessResult("Operation successful", data);
+
+        public static BaseResponseDto<T> ErrorResult(string message) => Fail(message, Common.ErrorCodes.BadRequest);
+
+        public static BaseResponseDto<T> ErrorResult(string message, string error)
+        {
+            var result = Fail(message, Common.ErrorCodes.BadRequest);
+            result.Error = error;
+            return result;
+        }
+
         /// <summary>Başka bir tipteki hata sonucunu (kod ve durum korunarak) bu tipe taşır.</summary>
         public static BaseResponseDto<T> From<TOther>(BaseResponseDto<TOther> failure) => new()
         {
