@@ -1,0 +1,116 @@
+# Tüm stack: PostgreSQL + Redis + RabbitMQ + API + Next.js vitrin (shop)
+#   docker compose up --build -d
+# Demo veri: docker exec dotnet-backend dotnet EcommerceBackend.dll seed-demo
+# Yeniden (önce temizle): docker exec dotnet-backend dotnet EcommerceBackend.dll seed-demo-force
+# (veya ./scripts/docker-up.ps1 | scripts/docker-up.sh)
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dotnet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce_db
+      POSTGRES_USER: ecommerce_user
+      POSTGRES_PASSWORD: ecommerce_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Infrastructure/Data/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - dotnet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: dotnet-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # Yerel Redis / başka servis 6379 kullanıyorsa çakışmayı önlemek için (API yine redis:6379 ile bağlanır).
+      - "16379:6379"
+    networks:
+      - dotnet-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: dotnet-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      # guest yalnızca localhost; API konteynerinden bağlantı için ayrı kullanıcı
+      RABBITMQ_DEFAULT_USER: ecommerce
+      RABBITMQ_DEFAULT_PASS: ecommerce_dev
+    networks:
+      - dotnet-network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+
+  dotnet-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dotnet-backend
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5000
+      Database__Provider: Npgsql
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=ecommerce_db;Username=ecommerce_user;Password=ecommerce_password;
+      Redis__ConnectionString: redis:6379
+      Redis__InstanceName: "Ecommerce:"
+      RabbitMq__Transport: RabbitMq
+      RabbitMq__Host: rabbitmq
+      RabbitMq__VirtualHost: "/"
+      RabbitMq__Username: ecommerce
+      RabbitMq__Password: ecommerce_dev
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - dotnet-network
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 120s
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  dotnet-network:
+    driver: bridge
