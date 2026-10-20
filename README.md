@@ -22,7 +22,7 @@ dotnet run --project EcommerceBackend.csproj
 # http://localhost:5000  ·  Swagger: http://localhost:5000/swagger
 ```
 
-`appsettings.Development.json`: SQLite (`ecommerce.db`), InMemory mesajlaşma, demo lojistik açık. Şema değiştiyse eski `ecommerce.db` dosyasını silin; `EnsureCreated` mevcut dosyaya yeni kolon eklemez.
+`appsettings.Development.json`: SQLite (`ecommerce.db`), InMemory mesajlaşma, demo lojistik açık. `EnsureCreated` mevcut dosyaya yeni kolon eklemediği için eski dosyalar açılışta `SqliteCartItemsBootstrap` ile yükseltilir; yeni şema değişikliklerini oraya da ekleyin (ya da `ecommerce.db`'yi silin).
 
 > Makinede yalnızca .NET 10 runtime varsa: `DOTNET_ROLL_FORWARD=Major dotnet run ...`
 
