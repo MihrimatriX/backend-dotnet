@@ -24,6 +24,7 @@ namespace EcommerceBackend.Infrastructure.Data
         public DbSet<LoginHistory> LoginHistories { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
         public DbSet<PrivacySettings> PrivacySettings { get; set; }
+        public DbSet<SecuritySettings> SecuritySettings { get; set; }
         public DbSet<HelpArticle> HelpArticles { get; set; }
         public DbSet<SupportTicket> SupportTickets { get; set; }
         public DbSet<SupportMessage> SupportMessages { get; set; }
@@ -413,6 +414,30 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // SecuritySettings configuration (kullanıcı başına tek kayıt)
+            modelBuilder.Entity<SecuritySettings>(entity =>
+            {
+                entity.ToTable("security_settings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("user_id");
+                // Bilerek HasDefaultValue yok: EF, CLR varsayılanına (false/0) eşit değeri INSERT'te atlayıp DB varsayılanını yazardı.
+                entity.Property(e => e.EmailNotifications).HasColumnName("email_notifications");
+                entity.Property(e => e.SmsNotifications).HasColumnName("sms_notifications");
+                entity.Property(e => e.LoginAlerts).HasColumnName("login_alerts");
+                entity.Property(e => e.TwoFactorRequired).HasColumnName("two_factor_required");
+                entity.Property(e => e.SessionTimeout).HasColumnName("session_timeout");
+                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
+                entity.HasIndex(e => e.UserId).IsUnique();
 
                 entity.HasOne(e => e.User)
                     .WithMany()
