@@ -13,6 +13,9 @@ public sealed class OutboxProcessor(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Bu kadar başarısız denemeden sonra mesaj atlanır (dead-letter); <c>LastError</c> nedeni tutar.</summary>
+    public const int MaxAttempts = 10;
+
     private static readonly IReadOnlyDictionary<string, Type> KnownTypes = new Dictionary<string, Type>(StringComparer.Ordinal)
     {
         // Stable keys: AssemblyQualifiedName ile yazıldığı için genelde birebir eşleşir; yine de FullName fallback var.
@@ -29,8 +32,10 @@ public sealed class OutboxProcessor(
 
         var now = DateTime.UtcNow;
 
+        // ponytail: satır kilidi (FOR UPDATE SKIP LOCKED) yok; tek API instance'ı varsayılır. Ölçeklenirse
+        // birden çok instance aynı mesajı yayınlayabilir — o zaman kilit ekleyin (consumer'lar zaten idempotent olmalı).
         var pending = await db.OutboxMessages
-            .Where(m => m.IsActive && m.ProcessedAtUtc == null)
+            .Where(m => m.IsActive && m.ProcessedAtUtc == null && m.Attempts < MaxAttempts)
             .OrderBy(m => m.OccurredAtUtc)
             .ThenBy(m => m.Id)
             .Take(batchSize)
@@ -46,7 +51,14 @@ public sealed class OutboxProcessor(
             try
             {
                 if (!TryDeserialize(msg.Type, msg.Payload, out var integrationEvent))
-                    throw new InvalidOperationException($"Unknown outbox message type: '{msg.Type}'");
+                {
+                    // Tekrar denemek düzeltmez: hemen dead-letter (Attempts = MaxAttempts) yap.
+                    msg.Attempts = MaxAttempts;
+                    msg.LastError = $"Unknown outbox message type: '{msg.Type}'";
+                    msg.UpdatedAt = now;
+                    logger.LogError("Outbox message {OutboxId} has unknown type {Type}; dead-lettered", msg.Id, msg.Type);
+                    continue;
+                }
 
                 await publishEndpoint.Publish(integrationEvent, integrationEvent.GetType(), ct).ConfigureAwait(false);
 
@@ -76,13 +88,8 @@ public sealed class OutboxProcessor(
     {
         integrationEvent = null!;
 
+        // Yalnızca beyaz listedeki tipler: DB'deki string'den rastgele tip yüklenmez.
         if (!KnownTypes.TryGetValue(typeKey, out var type))
-        {
-            // AssemblyQualifiedName değiştiyse Type.GetType ile şansımızı deneyelim
-            type = Type.GetType(typeKey, throwOnError: false);
-        }
-
-        if (type == null)
             return false;
 
         var obj = JsonSerializer.Deserialize(payload, type, JsonOptions);

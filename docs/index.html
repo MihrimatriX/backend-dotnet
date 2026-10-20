@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>backend-dotnet İnceleme Raporu</title>
+<meta name="description" content="E-ticaret .NET 9 backend projesinin baştan sona incelemesi: eksikler, fazlalar ve öncelikli yol haritası.">
+<style>
+:root{
+  --bg:#f7f7f5;--surface:#fff;--text:#1d1d1b;--muted:#5f5f5a;--border:#e2e1dc;
+  --crit:#b42318;--crit-bg:#fdecea;--warn:#a15c07;--warn-bg:#fdf3e1;--ok:#1a7f37;--ok-bg:#e7f5ec;
+  --info:#2457a6;--info-bg:#e8eef9;--code:#f0efea;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151513;--surface:#1e1e1c;--text:#ecebe6;--muted:#a3a29b;--border:#33332f;
+    --crit:#ff8a7a;--crit-bg:#3a1d1a;--warn:#f2b55c;--warn-bg:#352a16;--ok:#6fd38b;--ok-bg:#16301f;
+    --info:#8fb3f0;--info-bg:#1a2538;--code:#2a2a27;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151513;--surface:#1e1e1c;--text:#ecebe6;--muted:#a3a29b;--border:#33332f;
+  --crit:#ff8a7a;--crit-bg:#3a1d1a;--warn:#f2b55c;--warn-bg:#352a16;--ok:#6fd38b;--ok-bg:#16301f;
+  --info:#8fb3f0;--info-bg:#1a2538;--code:#2a2a27;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:920px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:2rem;line-height:1.2;margin:0 0 8px}
+h2{font-size:1.35rem;margin:48px 0 12px;padding-top:8px;border-top:1px solid var(--border)}
+.sub{color:var(--muted);margin:0 0 24px}
+code{font:0.88em ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px;word-break:break-word}
+a{color:var(--info)}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 8px}
+nav a{font-size:.9rem;text-decoration:none;border:1px solid var(--border);background:var(--surface);padding:4px 10px;border-radius:999px;color:var(--text)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:24px 0}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stat b{display:block;font-size:1.6rem;line-height:1.1}
+.stat span{color:var(--muted);font-size:.85rem}
+.callout{border-radius:10px;padding:14px 16px;margin:16px 0;background:var(--crit-bg)}
+.callout strong{color:var(--crit)}
+ul.items{list-style:none;padding:0;margin:0}
+ul.items li{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:8px 0}
+.tag{display:inline-block;font-size:.72rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:4px;margin-right:6px;vertical-align:1px}
+.k{color:var(--crit);background:var(--crit-bg)}
+.o{color:var(--warn);background:var(--warn-bg)}
+.d{color:var(--info);background:var(--info-bg)}
+.g{color:var(--ok);background:var(--ok-bg)}
+.where{display:block;color:var(--muted);font-size:.85rem;margin-top:4px}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;background:var(--surface);border:1px solid var(--border);font-size:.92rem}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+ol.road li{margin:8px 0}
+footer{color:var(--muted);font-size:.85rem;margin-top:56px}
+</style>
+</head>
+<body>
+<main>
+  <h1>backend-dotnet — İnceleme Raporu</h1>
+  <p class="sub">.NET 9 e-ticaret API'si · İncelenen sürüm: <code>main</code> @ <code>92b05ed</code> · 20 Ekim 2026</p>
+
+  <nav>
+    <a href="#durum">Güncel durum</a><a href="#ozet">İlk inceleme</a><a href="#build">Build</a><a href="#eksik">Eksikler</a>
+    <a href="#fazla">Fazlalar</a><a href="#guvenlik">Güvenlik</a><a href="#readme">README</a><a href="#yol">Yol haritası</a>
+  </nav>
+
+  <section id="durum">
+    <h2 style="border-top:0;margin-top:24px">Güncel durum — düzeltmeler uygulandı</h2>
+    <div class="stats">
+      <div class="stat"><b>0</b><span>derleme hatası (önce 102)</span></div>
+      <div class="stat"><b>202 / 202</b><span>sözleşme smoke kontrolü geçti</span></div>
+      <div class="stat"><b>16 / 16</b><span>modül sözleşmeye uyumlu</span></div>
+      <div class="stat"><b>1</b><span>CI workflow</span></div>
+    </div>
+    <ul class="items">
+      <li><span class="tag g">Yapıldı</span>Review, Security, Settings ve HelpSupport modülleri sözleşmeye taşındı. Security ayarları artık kalıcı (yeni <code>security_settings</code> tablosu); <code>logout-all-devices</code> ve şifre değişikliği eski token'ları gerçekten iptal ediyor; settings upsert/import/export çalışıyor; review <code>isVerified</code> siparişlerden hesaplanıyor; makale <code>tags</code> dolu.</li>
+      <li><span class="tag g">Yapıldı</span><code>ContractAlignment</code> migration'ı eklendi. Bekleyen model değişikliği yok; <code>dotnet-ef</code> artık tool manifest'inde.</li>
+      <li><span class="tag g">Yapıldı</span>İncelemede fark edilmeyen bir hata bulundu ve düzeltildi: <code>HasDefaultValue(true)</code> yüzünden EF, <code>false</code> değerlerini INSERT'te hiç göndermiyordu. Bu nedenle başarısız girişler başarılı diye kaydediliyor, pasif oluşturulan kayıtlar aktif oluyor ve kapatılan bildirim ayarları açık kalıyordu.</li>
+      <li><span class="tag g">Yapıldı</span>Güvenlik: üretimde seed çalışmıyor; secret'lar prod config'ten çıkarıldı; örnek JWT anahtarıyla açılış engellendi; 5 hatalı girişte 15 dakikalık kilit; BCrypt 12; ForwardedHeaders; container root olmayan kullanıcıyla çalışıyor.</li>
+      <li><span class="tag g">Yapıldı</span>Outbox: 10 denemede dead-letter, bilinmeyen tipler hemen ayrılıyor, <code>Type.GetType</code> kaldırıldı (yalnızca beyaz liste).</li>
+      <li><span class="tag g">Yapıldı</span>Temizlik: 7 kullanılmayan paket, HealthChecks UI, kullanılmayan publisher, ölü rate-limit config kaldırıldı. <code>SubCategoryController</code> doğru klasöre taşındı. README baştan yazıldı.</li>
+      <li><span class="tag g">Yapıldı</span>Smoke testin bulduğu 4 hata düzeltildi: SQLite'ta fiyat sıralaması 500 veriyordu; dev'de demo lojistik kapalıydı; pasif alt kategori silinemiyordu; Redis yokken health 503 dönüyordu.</li>
+      <li><span class="tag o">Açık</span>Entegrasyon testleri yalnızca CI'da çalışıyor (yerelde Docker gerekiyor). Eski JWT anahtarı git geçmişinde; canlı ortam varsa değiştirilmeli. Outbox'ta satır kilidi yok, tek instance varsayılıyor.</li>
+      <li><span class="tag d">Bilinçli bırakıldı</span>Health, metrics ve test uçları sözleşmenin §4.16 bölümünde zorunlu tutulduğu için kaldı. Repository katmanı ile tek implementasyonlu arayüzler davranışı etkilemiyor; büyük bir refactor gerektirdiği için ayrı bir iş olarak bırakıldı.</li>
+    </ul>
+  </section>
+
+  <section id="ozet">
+    <h2>İlk inceleme (92b05ed)</h2>
+    <p>Aşağıdaki bulgular düzeltmelerden önceki durumu anlatıyor; yukarıda "Yapıldı" olarak işaretlenenler giderildi.</p>
+    <p>Mimari doğru yöne gidiyordu: ortak bir API sözleşmesi (<code>docs/API_CONTRACT.md</code>), tek tip yanıt zarfı, hata kodları, outbox üzerinden mesajlaşma ve Testcontainers ile çalışan entegrasyon testleri vardı. Ancak son WIP commit'i <code>main</code>'e yarım haliyle birleştirilmişti ve proje <strong>derlenmiyordu</strong>.</p>
+  </section>
+
+  <section id="build">
+    <h2>Derleme durumu</h2>
+    <p>Hataların hepsi, eski <code>BaseResponseDto&lt;T&gt;.ErrorResult(...)</code> ve tek parametreli <code>SuccessResult(msg)</code> API'sini hâlâ kullanan dosyalardan geliyor:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Dosya</th><th>Hata</th></tr>
+      <tr><td><code>Application/Services/HelpSupportService.cs</code></td><td>23</td></tr>
+      <tr><td><code>Application/Services/ReviewService.cs</code></td><td>22</td></tr>
+      <tr><td><code>Application/Services/SecurityService.cs</code></td><td>19</td></tr>
+      <tr><td><code>Application/Services/SettingsService.cs</code></td><td>9</td></tr>
+      <tr><td><code>Infrastructure/Web/Controllers/SecurityController.cs</code></td><td>9</td></tr>
+      <tr><td><code>Infrastructure/Web/Controllers/HelpSupportController.cs</code></td><td>8</td></tr>
+      <tr><td><code>Infrastructure/Web/Controllers/SettingsController.cs</code></td><td>7</td></tr>
+      <tr><td><code>Infrastructure/Web/Controllers/ReviewController.cs</code></td><td>3</td></tr>
+      <tr><td><code>Infrastructure/Data/DemoDataSeeder.cs</code> (<code>PaymentMethod.Cvv</code> kaldırılmış)</td><td>2</td></tr>
+    </table></div>
+    <p>Ek olarak <code>global.json</code> SDK sürümünü <code>9.0.312</code>'ye sabitliyor. Makinede yalnızca SDK 10 kuruluysa <code>dotnet</code> komutu hiç çalışmıyor, çünkü <code>rollForward: latestFeature</code> major sürüm atlamıyor.</p>
+  </section>
+
+  <section id="eksik">
+    <h2>Eksikler</h2>
+    <ul class="items">
+      <li><span class="tag k">Kritik</span>Review, Security, Settings ve HelpSupport modülleri yeni zarf API'sine taşınmamış. Örnek alınacak kalıp hazır: <code>AddressService</code> / <code>CartService</code> + <code>ApiControllerBase.Respond(...)</code>. İş tahminen 2–3 saat sürer ve çoğu, satır silmekten ibaret.
+        <span class="where">Bu controller'lar kullanıcı kimliğini <code>ClaimTypes.NameIdentifier</code> ile okuyor. <code>MapInboundClaims=false</code> olduğu için token'da bu claim yok; derleme düzelse bile her yetkili istek 500 döner. Yerine <code>CurrentUserId</code> kullanılmalı.</span></li>
+      <li><span class="tag k">Kritik</span>Migration eksik. Son commit'te üç entity değişti ama model snapshot'ı güncellenmedi: <code>Order</code>'a idempotency_key, tracking_number, carrier, iptal/iade alanları ve bir unique index eklendi; <code>User</code>'a tokens_revoked_at ve revoke_except_jti eklendi; <code>PaymentMethod</code>'dan cvv kaldırıldı. <code>MigrateAsync</code> ile açılan Postgres veritabanında bu yüzden çalışma anında hata çıkar.
+        <span class="where">Migrations/ApplicationDbContextModelSnapshot.cs:841</span></li>
+      <li><span class="tag o">Orta</span>CI yok: <code>.github/workflows</code> dizini bulunmuyor ve <code>scripts/pipeline.*</code> hiçbir yerde otomatik çalışmıyor. Kırık bir build'in main'e girebilmesinin nedeni bu.</li>
+      <li><span class="tag o">Orta</span>Sözleşmede tanımlı olup gerçekte bir şey yapmayan uçlar:
+        <ul>
+          <li><code>PUT /api/security/settings</code> ayarları kalıcı kaydetmiyor; bunun için bir entity bile yok.</li>
+          <li><code>logout-all-devices</code> yalnızca stub.</li>
+          <li><code>security/info</code> son giriş bilgisini her zaman null döndürüyor.</li>
+          <li><code>settings/import</code> hiçbir şey yapmıyor.</li>
+          <li><code>settings/user</code> ve <code>settings/privacy</code> upsert değil: kayıt yoksa oluşturmuyor.</li>
+          <li>Yorumlarda <code>isVerified</code> her zaman false.</li>
+          <li>Makalelerde <code>tags</code> her zaman boş.</li>
+        </ul></li>
+      <li><span class="tag o">Orta</span>Bozuk modüllerde iki sorun daha var. Sayfalama <code>Paging.Normalize</code> kullanmıyor, bu yüzden <code>pageNumber=0</code> negatif bir Skip değerine dönüşüyor. <code>settings/export</code> ise PascalCase alan adları ve sonunda <code>Z</code> olmayan tarihler üretiyor; <code>ApiJson.Options</code> kullanılmalı.</li>
+      <li><span class="tag d">Düşük</span>Unit test yok, yalnızca Docker gerektiren entegrasyon testleri var. Fiyatlandırma, ödeme doğrulayıcı ve sipariş durum geçişleri saf unit test için çok uygun.</li>
+      <li><span class="tag d">Düşük</span><code>contract-smoke.mjs</code> başkasının siparişine erişimde 404 bekliyor, sözleşmenin genel kuralı ise 403. Sözleşmeye bunu açıklayan bir satır eklenmeli. Ayrıca DELETE uçları, 2FA ve bazı 403/404 yolları hiç test edilmiyor.</li>
+    </ul>
+  </section>
+
+  <section id="fazla">
+    <h2>Fazlalar</h2>
+    <ul class="items">
+      <li><span class="tag o">Sil</span>Kullanılmayan paketler:
+        <ul>
+          <li><code>AspNetCoreRateLimit</code>: hız limiti zaten yerleşik <code>RateLimiter</code> ile yapılıyor.</li>
+          <li><code>FluentValidation.AspNetCore</code></li>
+          <li><code>Microsoft.EntityFrameworkCore.InMemory</code></li>
+          <li><code>Microsoft.AspNetCore.OpenApi</code>: Swagger'ı Swashbuckle tek başına sağlıyor.</li>
+          <li>Açık <code>System.IdentityModel.Tokens.Jwt</code> referansı: JwtBearer paketiyle zaten transitif geliyor.</li>
+        </ul></li>
+      <li><span class="tag o">Sil</span><code>HealthChecks.UI</code>, InMemory storage ve <code>KubernetesClient</code> override'ı birlikte gidebilir. UI, <code>UIResponseWriter</code> formatında veri bekliyor ama yokladığı <code>/api/health</code> kendi JSON'unu dönüyor; büyük ihtimalle UI hiç çalışmıyor.</li>
+      <li><span class="tag o">Sil</span>Dört ayrı health ucu var: <code>/health</code>, <code>/actuator/health</code>, <code>/api/health</code> ve <code>/api/test/health</code>. Buna karşın <code>MapHealthChecks</code> hiç çağrılmıyor.</li>
+      <li><span class="tag o">Sil</span>Kullanılmayan kod:
+        <ul>
+          <li><code>MetricsController</code>: <code>/actuator/prometheus</code> zaten var ve statik sayaçlarını hiçbir yer artırmıyor.</li>
+          <li><code>TestController</code></li>
+          <li><code>MassTransitIntegrationEventPublisher</code>: DI'da outbox publisher kayıtlı.</li>
+          <li><code>HelpSupportService</code> içindeki 13 "Not implemented yet" stub'ı.</li>
+        </ul></li>
+      <li><span class="tag d">Sadeleştir</span>Repository katmanı tutarsız: yalnızca Product, Order ve Favorite için repository kalmış, diğer tüm servisler doğrudan <code>DbContext</code> kullanıyor. Ya hepsi repository kullanmalı ya hiçbiri. Tek implementasyonu olan 16 <code>IXxxService</code> arayüzü de, bunları mock'layan bir test olmadığı için şu an bir işe yaramıyor.</li>
+      <li><span class="tag d">Sadeleştir</span>Ölü yapılandırma ve yamalar:
+        <ul>
+          <li><code>appsettings*.json</code> içindeki <code>IpRateLimiting</code> bloğu okunmuyor. Kod <code>RateLimit:RequestsPerMinute</code> okuyor, bu yüzden limit her ortamda 300/dk.</li>
+          <li><code>init-scripts/01-init-database.sql</code> docker-compose'un zaten yaptığı işi tekrarlıyor.</li>
+          <li><code>SqliteCartItemsBootstrap</code> elle yazılmış bir DDL yaması.</li>
+        </ul></li>
+      <li><span class="tag d">Sadeleştir</span>12 adet <code>.ps1</code>/<code>.sh</code> script çifti var. Bir de iki ayrı smoke aracı var: <code>api-smoke-test.ps1</code> (396 satır) ve <code>contract-smoke.mjs</code> (670 satır). Sözleşmeyi doğrulayan ikincisi olduğu için birincisi emekliye ayrılabilir.</li>
+      <li><span class="tag d">Taşı</span><code>Web/Controllers/SubCategoryController.cs</code> diğer controller'lardan ayrı bir klasörde ve farklı bir namespace'te duruyor.</li>
+    </ul>
+    <p>Not: Domain, Application ve Infrastructure klasörleri aynı <code>.csproj</code> içinde ve Application servisleri doğrudan <code>Infrastructure.Data</code>'ya erişiyor. Yani katman ayrımı yalnızca klasör adlarında var. İki dürüst seçenek var: katmanları ayrı projelere bölmek ya da tek proje içinde özellik klasörlerine geçmek.</p>
+  </section>
+
+  <section id="guvenlik">
+    <h2>Güvenlik ve operasyon</h2>
+    <ul class="items">
+      <li><span class="tag g">Giderildi</span><code>DataSeeder</code>, demo şifreli admin hesaplarını her ortamda oluşturuyordu. Artık Production ortamında çalışmıyor.
+        <span class="where">Program.cs</span></li>
+      <li><span class="tag g">Giderildi</span>JWT anahtarı, DB şifresi ve RabbitMQ bilgileri <code>appsettings.Production.json</code>'dan çıkarıldı. Üretimde anahtar 32 bayttan kısaysa ya da repodaki örnek anahtarsa uygulama açılmıyor; değerler <code>Jwt__Key</code>, <code>ConnectionStrings__DefaultConnection</code> ve <code>RabbitMq__Username/Password</code> ortam değişkenleriyle verilmeli. Geliştirme anahtarları dev ve docker yapılandırmalarında duruyor; bu bilinçli, Spring ikiziyle paylaşılıyorlar.</li>
+      <li><span class="tag k">Kritik</span>Login'de hesap kilitleme ve özel bir rate limit yok. <code>ForwardedHeaders</code> da ayarlı olmadığından, proxy arkasında tüm istemciler aynı IP kovasını paylaşıyor.</li>
+      <li><span class="tag o">Orta</span>Kimlik ve token yönetimi:
+        <ul>
+          <li>E-posta değiştirilirken büyük/küçük harf normalize edilmiyor. Rol e-postaya bağlı olduğu için <code>ADMIN@example.com</code> gibi bir adresle yetki yükseltme riski var.</li>
+          <li>Şifre değiştiğinde eski JWT'ler iptal edilmiyor.</li>
+          <li>Access token 24 saat geçerli ve refresh token yok.</li>
+        </ul></li>
+      <li><span class="tag o">Orta</span>Kimlik doğrulaması olmadan bilgi veren uçlar: <code>/actuator/prometheus</code>, <code>/api/metrics*</code>, <code>/health-ui</code> ve makine adı ile işletim sistemini gösteren <code>/api/test/info</code>. Ayrıca servisler 57 yerde <code>ex.Message</code>'ı doğrudan istemciye döndürüyor.</li>
+      <li><span class="tag o">Orta</span>Outbox sağlam değil:
+        <ul>
+          <li>Retry sınırı ve dead-letter kuyruğu yok; işlenemeyen tek bir mesaj kuyruğu tıkıyor.</li>
+          <li><code>SKIP LOCKED</code> yok; birden fazla instance çalışırsa aynı mesaj iki kez yayınlanıyor.</li>
+          <li>Mesaj tipi, DB'deki string'den <code>Type.GetType</code> ile yükleniyor.</li>
+        </ul></li>
+      <li><span class="tag o">Orta</span>Docker yapılandırması:
+        <ul>
+          <li>docker-compose API'yi <code>Development</code> modunda çalıştırıyor.</li>
+          <li>Postgres, RabbitMQ yönetim arayüzü ve şifresiz Redis dışarıya açık.</li>
+          <li>Container root kullanıcısıyla çalışıyor.</li>
+          <li><code>.dockerignore</code> tests ve docs klasörlerini dışlamıyor.</li>
+        </ul></li>
+      <li><span class="tag g">İyi</span>Kart verisi doğru ele alınıyor: yalnızca maskelenmiş son 4 hane saklanıyor, CVV hiç saklanmıyor. <code>GlobalExceptionMiddleware</code> hata ayrıntısını yalnızca Development ortamında gösteriyor.</li>
+    </ul>
+  </section>
+
+  <section id="readme">
+    <h2>README doğruluğu</h2>
+    <ul>
+      <li>Var olmayan şeyleri anlatıyor:
+        <ul>
+          <li><code>/api/auth/refresh</code> ucu yok.</li>
+          <li>Rotalar çoğul yazılmış (<code>/api/products</code>), gerçekte tekil (<code>/api/product</code>).</li>
+          <li><code>docker-compose.prod.yml</code> dosyası yok.</li>
+          <li>Prometheus ve Grafana compose'da yok; <code>monitoring/</code> klasörü var ama bağlı değil.</li>
+          <li>Port 8080 yazıyor, gerçekte 5000.</li>
+          <li><code>DB_HOST</code> ve <code>JWT_SECRET</code> gibi env değişkenleri okunmuyor; gerçekte <code>Jwt__Key</code> gibi adlar kullanılıyor.</li>
+          <li>Rate limit için AspNetCoreRateLimit kullanıldığını ve unit testler olduğunu söylüyor; ikisi de doğru değil.</li>
+        </ul></li>
+      <li>Anlatmadıkları: RabbitMQ/outbox mimarisi, <code>seed-demo</code> komutu, <code>scripts/</code> klasörü, API sözleşmesi ve projenin şu an derlenmediği.</li>
+    </ul>
+  </section>
+
+  <section id="yol">
+    <h2>Önerilen sıra</h2>
+    <ol class="road">
+      <li><s>Güvenlik açıklarını kapat</s> ✓ Yapıldı. Kalan iş: canlı bir ortam varsa oradaki anahtarı değiştir, login için lockout ekle.</li>
+      <li><strong>Derlemeyi düzelt:</strong> 4 modülü <code>AddressService</code> kalıbına taşı, <code>DemoDataSeeder</code>'daki <code>Cvv</code> satırlarını sil, <code>global.json</code>'daki sürüm kısıtını gevşet.</li>
+      <li><strong>Migration ekle:</strong> <code>dotnet ef migrations add ContractAlignment</code> çalıştır, ardından Testcontainers testlerini koştur.</li>
+      <li><strong>CI kur:</strong> build, test ve <code>contract-smoke.mjs</code>'yi çalıştıran tek bir GitHub Actions workflow'u.</li>
+      <li><strong>Temizle:</strong> kullanılmayan paketleri, fazla health/metrics/test uçlarını ve ölü yapılandırmayı kaldır.</li>
+      <li><strong>Eksik davranışları tamamla:</strong> security settings kalıcılığı, logout-all, settings upsert ve import, review <code>isVerified</code>.</li>
+      <li><strong>README'yi</strong> gerçek duruma göre yeniden yaz.</li>
+    </ol>
+  </section>
+
+  <footer>Kaynak: <a href="https://github.com/MihrimatriX/backend-dotnet">MihrimatriX/backend-dotnet</a> · Sözleşme: <a href="https://github.com/MihrimatriX/backend-dotnet/blob/main/docs/API_CONTRACT.md">docs/API_CONTRACT.md</a></footer>
+</main>
+</body>
+</html>

@@ -12,6 +12,7 @@ using Serilog;
 using Prometheus;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 var isSeedDemoForceCmd = args.Any(a => string.Equals(a, "seed-demo-force", StringComparison.OrdinalIgnoreCase));
@@ -122,13 +123,14 @@ builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("Application is healthy"))
     .AddEcommerceInfrastructureHealthChecks(builder.Configuration, redisConnection);
 
-// Health Checks UI
-builder.Services.AddHealthChecksUI(options =>
+// Reverse proxy arkasında gerçek istemci IP'si (hız limiti, giriş geçmişi). Varsayılan yalnızca loopback'e güvenir;
+// proxy başka bir host'taysa adresi ForwardedHeaders:KnownProxies listesine ekleyin.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.SetEvaluationTimeInSeconds(10);
-    options.MaximumHistoryEntriesPerEndpoint(100);
-    options.AddHealthCheckEndpoint("E-Commerce API", "/api/health");
-}).AddInMemoryStorage();
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+        options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+});
 
 // Repositories
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
@@ -156,12 +158,21 @@ builder.Services.AddScoped<ICampaignService, CampaignService>();
 // HTTP: CORS, hız limiti, JWT (§1.4, §2)
 builder.Services.AddApiCors(builder.Configuration);
 builder.Services.AddApiRateLimiting(builder.Configuration);
-builder.Services.AddApiJwtAuthentication(
-    builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions());
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+// Repoda commit'li anahtarlar herkese açık: üretimde Jwt__Key ortam değişkeni zorunlu.
+if (builder.Environment.IsProduction()
+    && (System.Text.Encoding.UTF8.GetByteCount(jwtOptions.Key) < 32
+        || jwtOptions.Key.StartsWith("mySecretKey", StringComparison.Ordinal)))
+{
+    throw new InvalidOperationException(
+        "Jwt:Key üretimde Jwt__Key ortam değişkeniyle verilmeli (en az 32 bayt, repodaki örnek anahtar olamaz).");
+}
+builder.Services.AddApiJwtAuthentication(jwtOptions);
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseCorrelationId();
 app.UseMiddleware<RequestLoggingMiddleware>();
@@ -195,11 +206,6 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecksUI(options =>
-{
-    options.UIPath = "/health-ui";
-});
-
 app.MapControllers();
 
 app.MapGet("/", () => "E-Commerce API is running!");
@@ -220,8 +226,9 @@ await using (var scope = app.Services.CreateAsyncScope())
         await context.Database.MigrateAsync();
     }
 
-    var seeder = new DataSeeder(context);
-    await seeder.SeedAsync();
+    // Seed bilinen şifreli admin/demo hesapları oluşturur; üretimde asla çalışmamalı.
+    if (!app.Environment.IsProduction())
+        await new DataSeeder(context).SeedAsync();
 
     if (runDemoSeedOnly)
         await DemoDataSeeder.SeedAsync(context, force: demoSeedForce);

@@ -5,7 +5,7 @@ using EcommerceBackend.Infrastructure.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace EcommerceBackend.Web.Controllers;
+namespace EcommerceBackend.Infrastructure.Web.Controllers;
 
 [Route("api/[controller]")]
 public class SubCategoryController : ApiControllerBase

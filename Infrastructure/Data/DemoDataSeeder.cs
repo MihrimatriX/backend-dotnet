@@ -284,7 +284,6 @@ public static class DemoDataSeeder
                 CardNumber = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"SEED_DEMO_PAN_{u.Id}_{Guid.NewGuid():N}")),
                 ExpiryMonth = 6 + (u.Id % 6),
                 ExpiryYear = 2028,
-                Cvv = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("SEED")),
                 IsDefault = true
             };
             await context.PaymentMethods.AddAsync(pmCard, cancellationToken);
@@ -299,7 +298,6 @@ public static class DemoDataSeeder
                     CardNumber = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"SEED_DEMO_PAN2_{u.Id}_{rnd.Next(1000, 9999)}")),
                     ExpiryMonth = 12,
                     ExpiryYear = 2029,
-                    Cvv = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("SE2")),
                     IsDefault = false
                 }, cancellationToken);
             }

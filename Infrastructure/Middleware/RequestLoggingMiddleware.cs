@@ -139,8 +139,7 @@ public sealed class RequestLoggingMiddleware
         path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/health", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/metrics", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith("/health-ui", StringComparison.OrdinalIgnoreCase);
+        || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase);
 
     private static string GetClientIpAddress(HttpContext context)
     {

@@ -85,7 +85,8 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         string redisConnectionString)
     {
-        healthChecks.AddRedis(redisConnectionString, name: "redis", tags: new[] { "infra", "cache", "ready" });
+        // Redis yalnızca katalog önbelleği (§6: opsiyonel): erişilemezse Degraded, API çalışmaya devam eder.
+        healthChecks.AddRedis(redisConnectionString, name: "redis", failureStatus: HealthStatus.Degraded, tags: new[] { "infra", "cache", "ready" });
 
         var rabbit = configuration.GetSection(RabbitMqOptions.SectionName).Get<RabbitMqOptions>() ?? new RabbitMqOptions();
         if (!string.Equals(rabbit.Transport, "RabbitMq", StringComparison.OrdinalIgnoreCase))

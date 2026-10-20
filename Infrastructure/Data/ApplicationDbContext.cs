@@ -24,6 +24,7 @@ namespace EcommerceBackend.Infrastructure.Data
         public DbSet<LoginHistory> LoginHistories { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
         public DbSet<PrivacySettings> PrivacySettings { get; set; }
+        public DbSet<SecuritySettings> SecuritySettings { get; set; }
         public DbSet<HelpArticle> HelpArticles { get; set; }
         public DbSet<SupportTicket> SupportTickets { get; set; }
         public DbSet<SupportMessage> SupportMessages { get; set; }
@@ -31,6 +32,15 @@ namespace EcommerceBackend.Infrastructure.Data
 
         public DbSet<CartItem> CartItems { get; set; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
+
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+        {
+            // SQLite decimal'e göre ORDER BY yapamaz (fiyat sıralaması 500 verir). Yalnızca geliştirme veritabanında
+            // double saklanır; Postgres şeması ve migration'lar etkilenmez.
+            // ponytail: double ondalık hassasiyet kaybı yaşatabilir; dev dışında SQLite kullanılırsa TEXT+client-side sıralamaya geçin.
+            if (Database.IsSqlite())
+                configurationBuilder.Properties<decimal>().HaveConversion<double>();
+        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -47,7 +57,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.QuantityPerUnit).IsRequired().HasMaxLength(50).HasColumnName("quantity_per_unit");
                 entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
                 entity.Property(e => e.Discount).HasDefaultValue(0).HasColumnName("discount");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.CategoryId).HasColumnName("category_id");
@@ -75,7 +85,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.CategoryName).IsRequired().HasMaxLength(100).HasColumnName("category_name");
                 entity.Property(e => e.Description).HasMaxLength(500).HasColumnName("description");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.ImageUrl).HasColumnName("image_url");
@@ -98,7 +108,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Description).HasMaxLength(500).HasColumnName("description");
                 entity.Property(e => e.ImageUrl).HasColumnName("image_url");
                 entity.Property(e => e.CategoryId).HasColumnName("category_id");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -121,7 +131,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
                 entity.Property(e => e.ButtonText).HasMaxLength(50).HasColumnName("button_text");
                 entity.Property(e => e.Discount).HasDefaultValue(0).HasColumnName("discount");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.ImageUrl).HasColumnName("image_url");
@@ -142,7 +152,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.City).HasColumnName("city");
                 entity.Property(e => e.PostalCode).HasColumnName("postal_code");
                 entity.Property(e => e.IsEmailVerified).HasDefaultValue(false).HasColumnName("is_email_verified");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.TokensRevokedAt).HasColumnName("tokens_revoked_at");
@@ -162,7 +172,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Title).HasMaxLength(200).HasColumnName("title");
                 entity.Property(e => e.IsVerified).HasDefaultValue(false).HasColumnName("is_verified");
                 entity.Property(e => e.IsHelpful).HasDefaultValue(false).HasColumnName("is_helpful");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.UserId).HasColumnName("user_id");
@@ -190,7 +200,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Status).IsRequired().HasMaxLength(50).HasColumnName("status");
                 entity.Property(e => e.ShippingAddressId).HasColumnName("shipping_address_id");
                 entity.Property(e => e.BillingAddressId).HasColumnName("billing_address_id");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.UserId).HasColumnName("user_id");
@@ -224,7 +234,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Quantity).IsRequired().HasColumnName("quantity");
                 entity.Property(e => e.UnitPrice).IsRequired().HasColumnType("decimal(12,2)").HasColumnName("unit_price");
                 entity.Property(e => e.Discount).HasDefaultValue(0).HasColumnType("decimal(12,2)").HasColumnName("discount");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
                 entity.Property(e => e.OrderId).HasColumnName("order_id");
@@ -249,7 +259,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.UserId).HasColumnName("user_id");
                 entity.Property(e => e.ProductId).HasColumnName("product_id");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -281,7 +291,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Country).HasMaxLength(100).HasColumnName("country");
                 entity.Property(e => e.IsDefault).HasDefaultValue(false).HasColumnName("is_default");
                 entity.Property(e => e.PhoneNumber).HasMaxLength(20).HasColumnName("phone_number");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -307,7 +317,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.AccountNumber).HasMaxLength(128).HasColumnName("account_number");
                 entity.Property(e => e.AccountHolderName).HasMaxLength(100).HasColumnName("account_holder_name");
                 entity.Property(e => e.IsDefault).HasDefaultValue(false).HasColumnName("is_default");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -330,7 +340,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.ActionUrl).HasMaxLength(100).HasColumnName("action_url");
                 entity.Property(e => e.IsRead).HasDefaultValue(false).HasColumnName("is_read");
                 entity.Property(e => e.ReadAt).HasColumnName("read_at");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -351,9 +361,9 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.IpAddress).HasMaxLength(45).HasColumnName("ip_address");
                 entity.Property(e => e.UserAgent).HasMaxLength(500).HasColumnName("user_agent");
                 entity.Property(e => e.Location).HasMaxLength(100).HasColumnName("location");
-                entity.Property(e => e.IsSuccessful).HasDefaultValue(true).HasColumnName("is_successful");
+                entity.Property(e => e.IsSuccessful).HasColumnName("is_successful");
                 entity.Property(e => e.FailureReason).HasMaxLength(200).HasColumnName("failure_reason");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -373,19 +383,19 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Language).HasMaxLength(10).HasColumnName("language");
                 entity.Property(e => e.Timezone).HasMaxLength(50).HasColumnName("timezone");
                 entity.Property(e => e.Currency).HasMaxLength(10).HasColumnName("currency");
-                entity.Property(e => e.EmailNotifications).HasDefaultValue(true).HasColumnName("email_notifications");
+                entity.Property(e => e.EmailNotifications).HasColumnName("email_notifications");
                 entity.Property(e => e.SmsNotifications).HasDefaultValue(false).HasColumnName("sms_notifications");
-                entity.Property(e => e.PushNotifications).HasDefaultValue(true).HasColumnName("push_notifications");
+                entity.Property(e => e.PushNotifications).HasColumnName("push_notifications");
                 entity.Property(e => e.MarketingEmails).HasDefaultValue(false).HasColumnName("marketing_emails");
-                entity.Property(e => e.OrderUpdates).HasDefaultValue(true).HasColumnName("order_updates");
-                entity.Property(e => e.PriceAlerts).HasDefaultValue(true).HasColumnName("price_alerts");
-                entity.Property(e => e.StockNotifications).HasDefaultValue(true).HasColumnName("stock_notifications");
+                entity.Property(e => e.OrderUpdates).HasColumnName("order_updates");
+                entity.Property(e => e.PriceAlerts).HasColumnName("price_alerts");
+                entity.Property(e => e.StockNotifications).HasColumnName("stock_notifications");
                 entity.Property(e => e.Theme).HasMaxLength(20).HasColumnName("theme");
-                entity.Property(e => e.ItemsPerPage).HasDefaultValue(20).HasColumnName("items_per_page");
-                entity.Property(e => e.AutoSaveCart).HasDefaultValue(true).HasColumnName("auto_save_cart");
-                entity.Property(e => e.ShowProductRecommendations).HasDefaultValue(true).HasColumnName("show_product_recommendations");
+                entity.Property(e => e.ItemsPerPage).HasColumnName("items_per_page");
+                entity.Property(e => e.AutoSaveCart).HasColumnName("auto_save_cart");
+                entity.Property(e => e.ShowProductRecommendations).HasColumnName("show_product_recommendations");
                 entity.Property(e => e.EnableLocationServices).HasDefaultValue(false).HasColumnName("enable_location_services");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -402,17 +412,41 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.UserId).HasColumnName("user_id");
-                entity.Property(e => e.ProfileVisibility).HasDefaultValue(true).HasColumnName("profile_visibility");
+                entity.Property(e => e.ProfileVisibility).HasColumnName("profile_visibility");
                 entity.Property(e => e.ShowEmail).HasDefaultValue(false).HasColumnName("show_email");
                 entity.Property(e => e.ShowPhone).HasDefaultValue(false).HasColumnName("show_phone");
-                entity.Property(e => e.AllowDataCollection).HasDefaultValue(true).HasColumnName("allow_data_collection");
-                entity.Property(e => e.AllowAnalytics).HasDefaultValue(true).HasColumnName("allow_analytics");
-                entity.Property(e => e.AllowCookies).HasDefaultValue(true).HasColumnName("allow_cookies");
+                entity.Property(e => e.AllowDataCollection).HasColumnName("allow_data_collection");
+                entity.Property(e => e.AllowAnalytics).HasColumnName("allow_analytics");
+                entity.Property(e => e.AllowCookies).HasColumnName("allow_cookies");
                 entity.Property(e => e.AllowMarketing).HasDefaultValue(false).HasColumnName("allow_marketing");
                 entity.Property(e => e.DataSharing).HasDefaultValue(false).HasColumnName("data_sharing");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // SecuritySettings configuration (kullanıcı başına tek kayıt)
+            modelBuilder.Entity<SecuritySettings>(entity =>
+            {
+                entity.ToTable("security_settings");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("user_id");
+                // Bilerek HasDefaultValue yok: EF, CLR varsayılanına (false/0) eşit değeri INSERT'te atlayıp DB varsayılanını yazardı.
+                entity.Property(e => e.EmailNotifications).HasColumnName("email_notifications");
+                entity.Property(e => e.SmsNotifications).HasColumnName("sms_notifications");
+                entity.Property(e => e.LoginAlerts).HasColumnName("login_alerts");
+                entity.Property(e => e.TwoFactorRequired).HasColumnName("two_factor_required");
+                entity.Property(e => e.SessionTimeout).HasColumnName("session_timeout");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
+                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
+                entity.HasIndex(e => e.UserId).IsUnique();
 
                 entity.HasOne(e => e.User)
                     .WithMany()
@@ -431,8 +465,8 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Category).IsRequired().HasMaxLength(50).HasColumnName("category");
                 entity.Property(e => e.Tags).HasColumnName("tags");
                 entity.Property(e => e.ViewCount).HasDefaultValue(0).HasColumnName("view_count");
-                entity.Property(e => e.IsPublished).HasDefaultValue(true).HasColumnName("is_published");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsPublished).HasColumnName("is_published");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
             });
@@ -450,7 +484,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Priority).HasMaxLength(20).HasColumnName("priority");
                 entity.Property(e => e.Status).HasMaxLength(20).HasColumnName("status");
                 entity.Property(e => e.AssignedTo).HasMaxLength(100).HasColumnName("assigned_to");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -470,7 +504,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.UserId).HasColumnName("user_id");
                 entity.Property(e => e.Message).IsRequired().HasMaxLength(1000).HasColumnName("message");
                 entity.Property(e => e.IsFromSupport).HasDefaultValue(false).HasColumnName("is_from_support");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -495,8 +529,8 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.Answer).IsRequired().HasColumnName("answer");
                 entity.Property(e => e.Category).IsRequired().HasMaxLength(50).HasColumnName("category");
                 entity.Property(e => e.ViewCount).HasDefaultValue(0).HasColumnName("view_count");
-                entity.Property(e => e.IsPublished).HasDefaultValue(true).HasColumnName("is_published");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsPublished).HasColumnName("is_published");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
             });
@@ -509,7 +543,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.UserId).HasColumnName("user_id");
                 entity.Property(e => e.ProductId).HasColumnName("product_id");
                 entity.Property(e => e.Quantity).HasColumnName("quantity");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 
@@ -537,7 +571,7 @@ namespace EcommerceBackend.Infrastructure.Data
                 entity.Property(e => e.ProcessedAtUtc).HasColumnName("processed_at_utc");
                 entity.Property(e => e.Attempts).HasDefaultValue(0).HasColumnName("attempts");
                 entity.Property(e => e.LastError).HasMaxLength(2000).HasColumnName("last_error");
-                entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("created_at");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP").HasColumnName("updated_at");
 

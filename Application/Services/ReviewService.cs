@@ -1,4 +1,6 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
+using EcommerceBackend.Application.Orders;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -14,314 +16,178 @@ namespace EcommerceBackend.Application.Services
             _context = context;
         }
 
+        /// <summary>Tüm aktif yorumlar, en yeni önce (düz dizi, §1.3 sayfalama kuralı).</summary>
         public async Task<BaseResponseDto<List<ReviewDto>>> GetReviewsAdminAsync(int pageNumber = 1, int pageSize = 50)
         {
-            try
-            {
-                var reviews = await _context.Reviews
-                    .Include(r => r.User)
-                    .Include(r => r.Product)
-                    .Where(r => r.IsActive)
-                    .OrderByDescending(r => r.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(r => new ReviewDto
-                    {
-                        Id = r.Id,
-                        UserId = r.UserId,
-                        ProductId = r.ProductId,
-                        Rating = r.Rating,
-                        Comment = r.Comment,
-                        Title = r.Title,
-                        IsVerified = r.IsVerified,
-                        IsHelpful = r.IsHelpful,
-                        CreatedAt = r.CreatedAt,
-                        UpdatedAt = r.UpdatedAt,
-                        UserName = $"{r.User.FirstName} {r.User.LastName}",
-                        ProductName = r.Product.ProductName
-                    })
-                    .ToListAsync();
+            var paging = Paging.Normalize(pageNumber, pageSize);
+            var reviews = await ActiveReviewsWithDetails()
+                .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id)
+                .Skip(paging.Skip)
+                .Take(paging.PageSize)
+                .ToListAsync();
 
-                return BaseResponseDto<List<ReviewDto>>.SuccessResult(reviews);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<ReviewDto>>.ErrorResult($"Error retrieving reviews: {ex.Message}");
-            }
+            return BaseResponseDto<List<ReviewDto>>.SuccessResult(
+                "Reviews retrieved successfully",
+                reviews.Select(ToDto).ToList());
         }
 
         public async Task<BaseResponseDto<IEnumerable<ReviewDto>>> GetProductReviewsAsync(int productId)
         {
-            try
-            {
-                var reviews = await _context.Reviews
-                    .Include(r => r.User)
-                    .Include(r => r.Product)
-                    .Where(r => r.ProductId == productId && r.IsActive)
-                    .OrderByDescending(r => r.CreatedAt)
-                    .Select(r => new ReviewDto
-                    {
-                        Id = r.Id,
-                        UserId = r.UserId,
-                        ProductId = r.ProductId,
-                        Rating = r.Rating,
-                        Comment = r.Comment,
-                        Title = r.Title,
-                        IsVerified = r.IsVerified,
-                        IsHelpful = r.IsHelpful,
-                        CreatedAt = r.CreatedAt,
-                        UpdatedAt = r.UpdatedAt,
-                        UserName = $"{r.User.FirstName} {r.User.LastName}",
-                        ProductName = r.Product.ProductName
-                    })
-                    .ToListAsync();
+            var reviews = await ActiveReviewsWithDetails()
+                .Where(r => r.ProductId == productId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id)
+                .ToListAsync();
 
-                return BaseResponseDto<IEnumerable<ReviewDto>>.SuccessResult(reviews);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<IEnumerable<ReviewDto>>.ErrorResult($"Error retrieving reviews: {ex.Message}");
-            }
+            return BaseResponseDto<IEnumerable<ReviewDto>>.SuccessResult(
+                "Reviews retrieved successfully",
+                reviews.Select(ToDto).ToList());
         }
 
+        /// <summary>Yorum yoksa tüm sayaçlar sıfır.</summary>
         public async Task<BaseResponseDto<ProductReviewSummaryDto>> GetProductReviewSummaryAsync(int productId)
         {
-            try
+            var ratings = await _context.Reviews
+                .AsNoTracking()
+                .Where(r => r.ProductId == productId && r.IsActive)
+                .Select(r => r.Rating)
+                .ToListAsync();
+
+            var summary = new ProductReviewSummaryDto
             {
-                var reviews = await _context.Reviews
-                    .Where(r => r.ProductId == productId && r.IsActive)
-                    .ToListAsync();
+                ProductId = productId,
+                AverageRating = ratings.Count == 0 ? 0 : Math.Round(ratings.Average(), 1),
+                TotalReviews = ratings.Count,
+                Rating1Count = ratings.Count(r => r == 1),
+                Rating2Count = ratings.Count(r => r == 2),
+                Rating3Count = ratings.Count(r => r == 3),
+                Rating4Count = ratings.Count(r => r == 4),
+                Rating5Count = ratings.Count(r => r == 5)
+            };
 
-                if (!reviews.Any())
-                {
-                    return BaseResponseDto<ProductReviewSummaryDto>.SuccessResult(new ProductReviewSummaryDto
-                    {
-                        ProductId = productId,
-                        AverageRating = 0,
-                        TotalReviews = 0,
-                        Rating1Count = 0,
-                        Rating2Count = 0,
-                        Rating3Count = 0,
-                        Rating4Count = 0,
-                        Rating5Count = 0
-                    });
-                }
-
-                var summary = new ProductReviewSummaryDto
-                {
-                    ProductId = productId,
-                    AverageRating = Math.Round(reviews.Average(r => r.Rating), 1),
-                    TotalReviews = reviews.Count,
-                    Rating1Count = reviews.Count(r => r.Rating == 1),
-                    Rating2Count = reviews.Count(r => r.Rating == 2),
-                    Rating3Count = reviews.Count(r => r.Rating == 3),
-                    Rating4Count = reviews.Count(r => r.Rating == 4),
-                    Rating5Count = reviews.Count(r => r.Rating == 5)
-                };
-
-                return BaseResponseDto<ProductReviewSummaryDto>.SuccessResult(summary);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ProductReviewSummaryDto>.ErrorResult($"Error retrieving review summary: {ex.Message}");
-            }
+            return BaseResponseDto<ProductReviewSummaryDto>.SuccessResult("Review summary retrieved successfully", summary);
         }
 
         public async Task<BaseResponseDto<ReviewDto>> GetReviewByIdAsync(int id)
         {
-            try
-            {
-                var review = await _context.Reviews
-                    .Include(r => r.User)
-                    .Include(r => r.Product)
-                    .FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
-
-                if (review == null)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult("Review not found");
-                }
-
-                var reviewDto = new ReviewDto
-                {
-                    Id = review.Id,
-                    UserId = review.UserId,
-                    ProductId = review.ProductId,
-                    Rating = review.Rating,
-                    Comment = review.Comment,
-                    Title = review.Title,
-                    IsVerified = review.IsVerified,
-                    IsHelpful = review.IsHelpful,
-                    CreatedAt = review.CreatedAt,
-                    UpdatedAt = review.UpdatedAt,
-                    UserName = $"{review.User.FirstName} {review.User.LastName}",
-                    ProductName = review.Product.ProductName
-                };
-
-                return BaseResponseDto<ReviewDto>.SuccessResult(reviewDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ReviewDto>.ErrorResult($"Error retrieving review: {ex.Message}");
-            }
+            var review = await ActiveReviewsWithDetails().FirstOrDefaultAsync(r => r.Id == id);
+            return review == null
+                ? ReviewNotFound<ReviewDto>()
+                : BaseResponseDto<ReviewDto>.SuccessResult("Review retrieved successfully", ToDto(review));
         }
 
+        /// <summary>
+        /// Kullanıcı başına ürün başına tek aktif yorum. <c>isVerified</c>: kullanıcının bu ürünü içeren
+        /// iptal edilmemiş bir siparişi varsa true (§4.11).
+        /// </summary>
         public async Task<BaseResponseDto<ReviewDto>> CreateReviewAsync(CreateReviewDto createReviewDto, int userId)
         {
-            try
+            var productExists = await _context.Products
+                .AnyAsync(p => p.Id == createReviewDto.ProductId && p.IsActive);
+            if (!productExists)
+                return BaseResponseDto<ReviewDto>.Fail("Product not found", ErrorCodes.ProductNotFound);
+
+            var duplicate = await _context.Reviews.AnyAsync(r =>
+                r.UserId == userId && r.ProductId == createReviewDto.ProductId && r.IsActive);
+            if (duplicate)
+                return BaseResponseDto<ReviewDto>.Fail(
+                    "You have already reviewed this product. Edit or remove your existing review.",
+                    ErrorCodes.ReviewExists);
+
+            var isVerified = await _context.OrderItems.AnyAsync(oi =>
+                oi.ProductId == createReviewDto.ProductId
+                && oi.Order.UserId == userId
+                && oi.Order.Status != OrderStatuses.Cancelled);
+
+            var review = new Review
             {
-                // Check if product exists
-                var product = await _context.Products.FindAsync(createReviewDto.ProductId);
-                if (product == null)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult("Product not found");
-                }
+                UserId = userId,
+                ProductId = createReviewDto.ProductId,
+                Rating = createReviewDto.Rating,
+                Comment = createReviewDto.Comment,
+                Title = createReviewDto.Title,
+                IsVerified = isVerified,
+                IsHelpful = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                var user = await _context.Users.FindAsync(userId);
-                if (user == null)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult("User not found");
-                }
+            _context.Reviews.Add(review);
+            await _context.SaveChangesAsync();
 
-                var duplicate = await _context.Reviews.AnyAsync(r =>
-                    r.UserId == userId &&
-                    r.ProductId == createReviewDto.ProductId &&
-                    r.IsActive);
-                if (duplicate)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult(
-                        "You have already reviewed this product. Edit or remove your existing review.");
-                }
-
-                var review = new Review
-                {
-                    UserId = userId,
-                    ProductId = createReviewDto.ProductId,
-                    Rating = createReviewDto.Rating,
-                    Comment = createReviewDto.Comment,
-                    Title = createReviewDto.Title,
-                    IsVerified = false,
-                    IsHelpful = false,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _context.Reviews.Add(review);
-                await _context.SaveChangesAsync();
-
-                // Load the review with related data
-                var createdReview = await _context.Reviews
-                    .Include(r => r.User)
-                    .Include(r => r.Product)
-                    .FirstAsync(r => r.Id == review.Id);
-
-                var reviewDto = new ReviewDto
-                {
-                    Id = createdReview.Id,
-                    UserId = createdReview.UserId,
-                    ProductId = createdReview.ProductId,
-                    Rating = createdReview.Rating,
-                    Comment = createdReview.Comment,
-                    Title = createdReview.Title,
-                    IsVerified = createdReview.IsVerified,
-                    IsHelpful = createdReview.IsHelpful,
-                    CreatedAt = createdReview.CreatedAt,
-                    UpdatedAt = createdReview.UpdatedAt,
-                    UserName = $"{createdReview.User.FirstName} {createdReview.User.LastName}",
-                    ProductName = createdReview.Product.ProductName
-                };
-
-                return BaseResponseDto<ReviewDto>.SuccessResult(reviewDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ReviewDto>.ErrorResult($"Error creating review: {ex.Message}");
-            }
+            var created = await ActiveReviewsWithDetails().FirstAsync(r => r.Id == review.Id);
+            return BaseResponseDto<ReviewDto>.SuccessResult("Review created successfully", ToDto(created));
         }
 
+        /// <summary>Kısmi güncelleme; yalnızca sahip veya admin.</summary>
         public async Task<BaseResponseDto<ReviewDto>> UpdateReviewAsync(int id, UpdateReviewDto updateReviewDto, int userId, bool isAdmin)
         {
-            try
-            {
-                var review = await _context.Reviews
-                    .Include(r => r.User)
-                    .Include(r => r.Product)
-                    .FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
+            var review = await _context.Reviews
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
+            if (review == null)
+                return ReviewNotFound<ReviewDto>();
 
-                if (review == null)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult("Review not found");
-                }
+            if (!isAdmin && review.UserId != userId)
+                return BaseResponseDto<ReviewDto>.Forbidden("You can only edit your own reviews");
 
-                if (!isAdmin && review.UserId != userId)
-                {
-                    return BaseResponseDto<ReviewDto>.ErrorResult("You can only edit your own reviews");
-                }
+            if (updateReviewDto.Rating is { } rating)
+                review.Rating = rating;
+            if (updateReviewDto.Comment != null)
+                review.Comment = updateReviewDto.Comment;
+            if (updateReviewDto.Title != null)
+                review.Title = updateReviewDto.Title;
+            review.UpdatedAt = DateTime.UtcNow;
 
-                if (updateReviewDto.Rating.HasValue)
-                    review.Rating = updateReviewDto.Rating.Value;
+            await _context.SaveChangesAsync();
 
-                if (updateReviewDto.Comment != null)
-                    review.Comment = updateReviewDto.Comment;
-
-                if (updateReviewDto.Title != null)
-                    review.Title = updateReviewDto.Title;
-
-                review.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                var reviewDto = new ReviewDto
-                {
-                    Id = review.Id,
-                    UserId = review.UserId,
-                    ProductId = review.ProductId,
-                    Rating = review.Rating,
-                    Comment = review.Comment,
-                    Title = review.Title,
-                    IsVerified = review.IsVerified,
-                    IsHelpful = review.IsHelpful,
-                    CreatedAt = review.CreatedAt,
-                    UpdatedAt = review.UpdatedAt,
-                    UserName = $"{review.User.FirstName} {review.User.LastName}",
-                    ProductName = review.Product.ProductName
-                };
-
-                return BaseResponseDto<ReviewDto>.SuccessResult(reviewDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<ReviewDto>.ErrorResult($"Error updating review: {ex.Message}");
-            }
+            return BaseResponseDto<ReviewDto>.SuccessResult("Review updated successfully", ToDto(review));
         }
 
+        /// <summary>Yumuşak silme; yalnızca sahip veya admin.</summary>
         public async Task<BaseResponseDto<string>> DeleteReviewAsync(int id, int userId, bool isAdmin)
         {
-            try
-            {
-                var review = await _context.Reviews.FindAsync(id);
+            var review = await _context.Reviews.FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
+            if (review == null)
+                return ReviewNotFound<string>();
 
-                if (review == null)
-                {
-                    return BaseResponseDto<string>.ErrorResult("Review not found");
-                }
+            if (!isAdmin && review.UserId != userId)
+                return BaseResponseDto<string>.Forbidden("You can only delete your own reviews");
 
-                if (!isAdmin && review.UserId != userId)
-                {
-                    return BaseResponseDto<string>.ErrorResult("You can only delete your own reviews");
-                }
+            review.IsActive = false;
+            review.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                review.IsActive = false;
-                review.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return BaseResponseDto<string>.SuccessResult("Review deleted successfully", "Review deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<string>.ErrorResult($"Error deleting review: {ex.Message}");
-            }
+            return BaseResponseDto<string>.SuccessResult("Review deleted successfully", "Review deleted successfully");
         }
+
+        public static ReviewDto ToDto(Review r) => new()
+        {
+            Id = r.Id,
+            UserId = r.UserId,
+            ProductId = r.ProductId,
+            Rating = r.Rating,
+            Comment = r.Comment,
+            Title = r.Title,
+            IsVerified = r.IsVerified,
+            IsHelpful = r.IsHelpful,
+            CreatedAt = r.CreatedAt,
+            UpdatedAt = r.UpdatedAt,
+            UserName = $"{r.User.FirstName} {r.User.LastName}",
+            ProductName = r.Product.ProductName
+        };
+
+        private IQueryable<Review> ActiveReviewsWithDetails() =>
+            _context.Reviews
+                .AsNoTracking()
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => r.IsActive);
+
+        private static BaseResponseDto<T> ReviewNotFound<T>() =>
+            BaseResponseDto<T>.NotFound("Review not found", ErrorCodes.ReviewNotFound);
     }
 }

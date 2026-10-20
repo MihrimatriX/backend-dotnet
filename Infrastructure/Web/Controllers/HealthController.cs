@@ -40,7 +40,7 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
                     timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
 
-                var statusCode = healthReport.Status == HealthStatus.Healthy ? 200 : 503;
+                var statusCode = healthReport.Status == HealthStatus.Unhealthy ? 503 : 200;
                 return StatusCode(statusCode, response);
             }
             catch (Exception ex)

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EcommerceBackend.Application.DTOs;
 
 namespace EcommerceBackend.Application.Services
@@ -10,6 +11,6 @@ namespace EcommerceBackend.Application.Services
         Task<BaseResponseDto<PrivacySettingsDto>> UpdatePrivacySettingsAsync(int userId, UpdatePrivacySettingsDto updatePrivacySettingsDto);
         Task<BaseResponseDto<string>> ResetToDefaultsAsync(int userId);
         Task<BaseResponseDto<string>> ExportSettingsAsync(int userId);
-        Task<BaseResponseDto<string>> ImportSettingsAsync(int userId, string settingsJson);
+        Task<BaseResponseDto<string>> ImportSettingsAsync(int userId, JsonElement body);
     }
 }

@@ -32,20 +32,6 @@ namespace EcommerceBackend.Application.DTOs
         public bool IsPublished { get; set; } = true;
     }
 
-    public class UpdateHelpArticleDto
-    {
-        [StringLength(200, ErrorMessage = "Title cannot exceed 200 characters")]
-        public string? Title { get; set; }
-
-        public string? Content { get; set; }
-
-        [StringLength(50, ErrorMessage = "Category cannot exceed 50 characters")]
-        public string? Category { get; set; }
-
-        public List<string>? Tags { get; set; }
-        public bool? IsPublished { get; set; }
-    }
-
     public class SupportTicketDto
     {
         public int Id { get; set; }
@@ -80,24 +66,6 @@ namespace EcommerceBackend.Application.DTOs
         public string Priority { get; set; } = "Medium";
     }
 
-    public class UpdateSupportTicketDto
-    {
-        [StringLength(200, ErrorMessage = "Subject cannot exceed 200 characters")]
-        public string? Subject { get; set; }
-
-        [StringLength(2000, ErrorMessage = "Description cannot exceed 2000 characters")]
-        public string? Description { get; set; }
-
-        [StringLength(50, ErrorMessage = "Category cannot exceed 50 characters")]
-        public string? Category { get; set; }
-
-        [StringLength(20, ErrorMessage = "Priority cannot exceed 20 characters")]
-        public string? Priority { get; set; }
-
-        [StringLength(20, ErrorMessage = "Status cannot exceed 20 characters")]
-        public string? Status { get; set; }
-    }
-
     public class SupportMessageDto
     {
         public int Id { get; set; }
@@ -107,13 +75,6 @@ namespace EcommerceBackend.Application.DTOs
         public string Message { get; set; } = string.Empty;
         public bool IsFromSupport { get; set; }
         public DateTime CreatedAt { get; set; }
-    }
-
-    public class CreateSupportMessageDto
-    {
-        [Required(ErrorMessage = "Message is required")]
-        [StringLength(1000, ErrorMessage = "Message cannot exceed 1000 characters")]
-        public string Message { get; set; } = string.Empty;
     }
 
     public class FaqDto
@@ -126,35 +87,6 @@ namespace EcommerceBackend.Application.DTOs
         public bool IsPublished { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
-    }
-
-    public class CreateFaqDto
-    {
-        [Required(ErrorMessage = "Question is required")]
-        [StringLength(500, ErrorMessage = "Question cannot exceed 500 characters")]
-        public string Question { get; set; } = string.Empty;
-
-        [Required(ErrorMessage = "Answer is required")]
-        public string Answer { get; set; } = string.Empty;
-
-        [Required(ErrorMessage = "Category is required")]
-        [StringLength(50, ErrorMessage = "Category cannot exceed 50 characters")]
-        public string Category { get; set; } = string.Empty;
-
-        public bool IsPublished { get; set; } = true;
-    }
-
-    public class UpdateFaqDto
-    {
-        [StringLength(500, ErrorMessage = "Question cannot exceed 500 characters")]
-        public string? Question { get; set; }
-
-        public string? Answer { get; set; }
-
-        [StringLength(50, ErrorMessage = "Category cannot exceed 50 characters")]
-        public string? Category { get; set; }
-
-        public bool? IsPublished { get; set; }
     }
 
     public class ContactFormDto

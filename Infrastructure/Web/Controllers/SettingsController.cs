@@ -1,15 +1,15 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Application.Services;
-using System.Security.Claims;
 
 namespace EcommerceBackend.Infrastructure.Web.Controllers
 {
-    [ApiController]
+    /// <summary>§4.14 — her zaman çağıranın ayarları.</summary>
     [Route("api/[controller]")]
     [Authorize]
-    public class SettingsController : ControllerBase
+    public class SettingsController : ApiControllerBase
     {
         private readonly ISettingsService _settingsService;
 
@@ -19,153 +19,32 @@ namespace EcommerceBackend.Infrastructure.Web.Controllers
         }
 
         [HttpGet("user")]
-        public async Task<ActionResult<BaseResponseDto<UserSettingsDto>>> GetUserSettings()
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.GetUserSettingsAsync(currentUserId);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<UserSettingsDto>.ErrorResult($"Error retrieving user settings: {ex.Message}"));
-            }
-        }
+        public async Task<ActionResult<BaseResponseDto<UserSettingsDto>>> GetUserSettings() =>
+            Respond(await _settingsService.GetUserSettingsAsync(CurrentUserId));
 
         [HttpPut("user")]
-        public async Task<ActionResult<BaseResponseDto<UserSettingsDto>>> UpdateUserSettings([FromBody] UpdateUserSettingsDto updateUserSettingsDto)
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.UpdateUserSettingsAsync(currentUserId, updateUserSettingsDto);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<UserSettingsDto>.ErrorResult($"Error updating user settings: {ex.Message}"));
-            }
-        }
+        public async Task<ActionResult<BaseResponseDto<UserSettingsDto>>> UpdateUserSettings([FromBody] UpdateUserSettingsDto updateUserSettingsDto) =>
+            Respond(await _settingsService.UpdateUserSettingsAsync(CurrentUserId, updateUserSettingsDto));
 
         [HttpGet("privacy")]
-        public async Task<ActionResult<BaseResponseDto<PrivacySettingsDto>>> GetPrivacySettings()
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.GetPrivacySettingsAsync(currentUserId);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<PrivacySettingsDto>.ErrorResult($"Error retrieving privacy settings: {ex.Message}"));
-            }
-        }
+        public async Task<ActionResult<BaseResponseDto<PrivacySettingsDto>>> GetPrivacySettings() =>
+            Respond(await _settingsService.GetPrivacySettingsAsync(CurrentUserId));
 
         [HttpPut("privacy")]
-        public async Task<ActionResult<BaseResponseDto<PrivacySettingsDto>>> UpdatePrivacySettings([FromBody] UpdatePrivacySettingsDto updatePrivacySettingsDto)
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.UpdatePrivacySettingsAsync(currentUserId, updatePrivacySettingsDto);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<PrivacySettingsDto>.ErrorResult($"Error updating privacy settings: {ex.Message}"));
-            }
-        }
+        public async Task<ActionResult<BaseResponseDto<PrivacySettingsDto>>> UpdatePrivacySettings([FromBody] UpdatePrivacySettingsDto updatePrivacySettingsDto) =>
+            Respond(await _settingsService.UpdatePrivacySettingsAsync(CurrentUserId, updatePrivacySettingsDto));
 
         [HttpPost("reset")]
-        public async Task<ActionResult<BaseResponseDto<string>>> ResetToDefaults()
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.ResetToDefaultsAsync(currentUserId);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<string>.ErrorResult($"Error resetting settings: {ex.Message}"));
-            }
-        }
+        public async Task<ActionResult<BaseResponseDto<string>>> ResetToDefaults() =>
+            Respond(await _settingsService.ResetToDefaultsAsync(CurrentUserId));
 
         [HttpGet("export")]
-        public async Task<ActionResult<BaseResponseDto<string>>> ExportSettings()
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.ExportSettingsAsync(currentUserId);
+        public async Task<ActionResult<BaseResponseDto<string>>> ExportSettings() =>
+            Respond(await _settingsService.ExportSettingsAsync(CurrentUserId));
 
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<string>.ErrorResult($"Error exporting settings: {ex.Message}"));
-            }
-        }
-
+        /// <summary>Gövde: export metni (JSON string) veya doğrudan aynı nesne.</summary>
         [HttpPost("import")]
-        public async Task<ActionResult<BaseResponseDto<string>>> ImportSettings([FromBody] string settingsJson)
-        {
-            try
-            {
-                var currentUserId = GetCurrentUserId();
-                var result = await _settingsService.ImportSettingsAsync(currentUserId, settingsJson);
-
-                if (result.Success)
-                {
-                    return Ok(result);
-                }
-                return BadRequest(result);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, BaseResponseDto<string>.ErrorResult($"Error importing settings: {ex.Message}"));
-            }
-        }
-
-        private int GetCurrentUserId()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (int.TryParse(userIdClaim, out int userId))
-            {
-                return userId;
-            }
-            throw new UnauthorizedAccessException("Invalid user ID");
-        }
+        public async Task<ActionResult<BaseResponseDto<string>>> ImportSettings([FromBody] JsonElement body) =>
+            Respond(await _settingsService.ImportSettingsAsync(CurrentUserId, body));
     }
 }

@@ -1,3 +1,4 @@
+using EcommerceBackend.Application.Common;
 using EcommerceBackend.Application.DTOs;
 using EcommerceBackend.Domain.Entities;
 using EcommerceBackend.Infrastructure.Data;
@@ -7,363 +8,215 @@ namespace EcommerceBackend.Application.Services
 {
     public class HelpSupportService : IHelpSupportService
     {
-        private readonly ApplicationDbContext _context;
+        private const string ContactThanks = "Thank you for your message. We will get back to you soon.";
 
-        public HelpSupportService(ApplicationDbContext context)
+        private readonly ApplicationDbContext _context;
+        private readonly ILogger<HelpSupportService> _logger;
+
+        public HelpSupportService(ApplicationDbContext context, ILogger<HelpSupportService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
+        /// <summary>Yayımlanmış makaleler, en yeni önce.</summary>
         public async Task<BaseResponseDto<List<HelpArticleDto>>> GetHelpArticlesAsync(string? category = null, int pageNumber = 1, int pageSize = 10)
         {
-            try
-            {
-                var query = _context.HelpArticles
-                    .Where(ha => ha.IsPublished && ha.IsActive);
+            var paging = Paging.Normalize(pageNumber, pageSize);
+            var query = _context.HelpArticles.AsNoTracking().Where(ha => ha.IsPublished && ha.IsActive);
+            if (!string.IsNullOrEmpty(category))
+                query = query.Where(ha => ha.Category == category);
 
-                if (!string.IsNullOrEmpty(category))
-                {
-                    query = query.Where(ha => ha.Category == category);
-                }
+            var articles = await query
+                .OrderByDescending(ha => ha.CreatedAt)
+                .ThenByDescending(ha => ha.Id)
+                .Skip(paging.Skip)
+                .Take(paging.PageSize)
+                .ToListAsync();
 
-                var articles = await query
-                    .OrderByDescending(ha => ha.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(ha => new HelpArticleDto
-                    {
-                        Id = ha.Id,
-                        Title = ha.Title,
-                        Content = ha.Content,
-                        Category = ha.Category,
-                        Tags = new List<string>(),
-                        ViewCount = ha.ViewCount,
-                        IsPublished = ha.IsPublished,
-                        CreatedAt = ha.CreatedAt,
-                        UpdatedAt = ha.UpdatedAt
-                    })
-                    .ToListAsync();
-
-                return BaseResponseDto<List<HelpArticleDto>>.SuccessResult("Help articles retrieved successfully", articles);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<HelpArticleDto>>.ErrorResult($"Error retrieving help articles: {ex.Message}");
-            }
+            return BaseResponseDto<List<HelpArticleDto>>.SuccessResult(
+                "Help articles retrieved successfully",
+                articles.Select(ToDto).ToList());
         }
 
+        /// <summary>Her okumada <c>viewCount</c> artar.</summary>
         public async Task<BaseResponseDto<HelpArticleDto>> GetHelpArticleByIdAsync(int articleId)
         {
-            try
-            {
-                var article = await _context.HelpArticles
-                    .Where(ha => ha.Id == articleId && ha.IsPublished && ha.IsActive)
-                    .FirstOrDefaultAsync();
+            var article = await _context.HelpArticles
+                .FirstOrDefaultAsync(ha => ha.Id == articleId && ha.IsPublished && ha.IsActive);
+            if (article == null)
+                return BaseResponseDto<HelpArticleDto>.NotFound("Help article not found", ErrorCodes.ArticleNotFound);
 
-                if (article == null)
-                {
-                    return BaseResponseDto<HelpArticleDto>.ErrorResult("Help article not found");
-                }
+            article.ViewCount++;
+            article.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
 
-                // Increment view count
-                article.ViewCount++;
-                article.UpdatedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-
-                var articleDto = new HelpArticleDto
-                {
-                    Id = article.Id,
-                    Title = article.Title,
-                    Content = article.Content,
-                    Category = article.Category,
-                    Tags = article.Tags.Split(',').Where(t => !string.IsNullOrEmpty(t)).ToList(),
-                    ViewCount = article.ViewCount,
-                    IsPublished = article.IsPublished,
-                    CreatedAt = article.CreatedAt,
-                    UpdatedAt = article.UpdatedAt
-                };
-
-                return BaseResponseDto<HelpArticleDto>.SuccessResult("Help article retrieved successfully", articleDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<HelpArticleDto>.ErrorResult($"Error retrieving help article: {ex.Message}");
-            }
+            return BaseResponseDto<HelpArticleDto>.SuccessResult("Help article retrieved successfully", ToDto(article));
         }
 
         public async Task<BaseResponseDto<HelpArticleDto>> CreateHelpArticleAsync(CreateHelpArticleDto createHelpArticleDto)
         {
-            try
+            var article = new HelpArticle
             {
-                var article = new HelpArticle
-                {
-                    Title = createHelpArticleDto.Title,
-                    Content = createHelpArticleDto.Content,
-                    Category = createHelpArticleDto.Category,
-                    Tags = string.Join(",", createHelpArticleDto.Tags),
-                    ViewCount = 0,
-                    IsPublished = createHelpArticleDto.IsPublished,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
+                Title = createHelpArticleDto.Title,
+                Content = createHelpArticleDto.Content,
+                Category = createHelpArticleDto.Category,
+                Tags = string.Join(",", (createHelpArticleDto.Tags ?? new List<string>())
+                    .Select(t => t.Trim())
+                    .Where(t => t.Length > 0)),
+                ViewCount = 0,
+                IsPublished = createHelpArticleDto.IsPublished,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                _context.HelpArticles.Add(article);
-                await _context.SaveChangesAsync();
+            _context.HelpArticles.Add(article);
+            await _context.SaveChangesAsync();
 
-                var articleDto = new HelpArticleDto
-                {
-                    Id = article.Id,
-                    Title = article.Title,
-                    Content = article.Content,
-                    Category = article.Category,
-                    Tags = article.Tags.Split(',').Where(t => !string.IsNullOrEmpty(t)).ToList(),
-                    ViewCount = article.ViewCount,
-                    IsPublished = article.IsPublished,
-                    CreatedAt = article.CreatedAt,
-                    UpdatedAt = article.UpdatedAt
-                };
-
-                return BaseResponseDto<HelpArticleDto>.SuccessResult("Help article created successfully", articleDto);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<HelpArticleDto>.ErrorResult($"Error creating help article: {ex.Message}");
-            }
+            return BaseResponseDto<HelpArticleDto>.SuccessResult("Help article created successfully", ToDto(article));
         }
 
         public async Task<BaseResponseDto<SupportTicketDto>> CreateSupportTicketAsync(int userId, CreateSupportTicketDto createSupportTicketDto)
         {
-            try
+            var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+            if (user == null)
+                return BaseResponseDto<SupportTicketDto>.NotFound("User not found", ErrorCodes.UserNotFound);
+
+            var ticket = new SupportTicket
             {
-                var user = await _context.Users
-                    .Where(u => u.Id == userId && u.IsActive)
-                    .FirstOrDefaultAsync();
+                UserId = userId,
+                Subject = createSupportTicketDto.Subject,
+                Description = createSupportTicketDto.Description,
+                Category = createSupportTicketDto.Category,
+                Priority = string.IsNullOrWhiteSpace(createSupportTicketDto.Priority) ? "Medium" : createSupportTicketDto.Priority,
+                Status = "Open",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-                if (user == null)
-                {
-                    return BaseResponseDto<SupportTicketDto>.ErrorResult("User not found");
-                }
+            _context.SupportTickets.Add(ticket);
+            await _context.SaveChangesAsync();
 
-                var ticket = new SupportTicket
-                {
-                    UserId = userId,
-                    Subject = createSupportTicketDto.Subject,
-                    Description = createSupportTicketDto.Description,
-                    Category = createSupportTicketDto.Category,
-                    Priority = createSupportTicketDto.Priority,
-                    Status = "Open",
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _context.SupportTickets.Add(ticket);
-                await _context.SaveChangesAsync();
-
-                var ticketDto = new SupportTicketDto
-                {
-                    Id = ticket.Id,
-                    UserId = ticket.UserId,
-                    UserName = user.FirstName + " " + user.LastName,
-                    Subject = ticket.Subject,
-                    Description = ticket.Description,
-                    Category = ticket.Category,
-                    Priority = ticket.Priority,
-                    Status = ticket.Status,
-                    AssignedTo = ticket.AssignedTo,
-                    CreatedAt = ticket.CreatedAt,
-                    UpdatedAt = ticket.UpdatedAt,
-                    Messages = new List<SupportMessageDto>()
-                };
-
-                return BaseResponseDto<SupportTicketDto>.SuccessResult("Support ticket created successfully", ticketDto);
-            }
-            catch (Exception ex)
+            var ticketDto = new SupportTicketDto
             {
-                return BaseResponseDto<SupportTicketDto>.ErrorResult($"Error creating support ticket: {ex.Message}");
-            }
+                Id = ticket.Id,
+                UserId = ticket.UserId,
+                UserName = user.FirstName + " " + user.LastName,
+                Subject = ticket.Subject,
+                Description = ticket.Description,
+                Category = ticket.Category,
+                Priority = ticket.Priority,
+                Status = ticket.Status,
+                AssignedTo = ticket.AssignedTo,
+                CreatedAt = ticket.CreatedAt,
+                UpdatedAt = ticket.UpdatedAt,
+                Messages = new List<SupportMessageDto>()
+            };
+
+            return BaseResponseDto<SupportTicketDto>.SuccessResult("Support ticket created successfully", ticketDto);
         }
 
-        public async Task<BaseResponseDto<List<SupportTicketDto>>> GetAllSupportTicketsAdminAsync(int pageNumber = 1, int pageSize = 20)
-        {
-            try
-            {
-                var tickets = await _context.SupportTickets
-                    .Where(st => st.IsActive)
-                    .OrderByDescending(st => st.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(st => new SupportTicketDto
-                    {
-                        Id = st.Id,
-                        UserId = st.UserId,
-                        UserName = st.User.FirstName + " " + st.User.LastName,
-                        Subject = st.Subject,
-                        Description = st.Description,
-                        Category = st.Category,
-                        Priority = st.Priority,
-                        Status = st.Status,
-                        AssignedTo = st.AssignedTo,
-                        CreatedAt = st.CreatedAt,
-                        UpdatedAt = st.UpdatedAt,
-                        Messages = st.Messages
-                            .Where(m => m.IsActive)
-                            .Select(m => new SupportMessageDto
-                            {
-                                Id = m.Id,
-                                TicketId = m.TicketId,
-                                UserId = m.UserId,
-                                UserName = m.User.FirstName + " " + m.User.LastName,
-                                Message = m.Message,
-                                IsFromSupport = m.IsFromSupport,
-                                CreatedAt = m.CreatedAt
-                            })
-                            .ToList()
-                    })
-                    .ToListAsync();
+        public async Task<BaseResponseDto<List<SupportTicketDto>>> GetAllSupportTicketsAdminAsync(int pageNumber = 1, int pageSize = 20) =>
+            BaseResponseDto<List<SupportTicketDto>>.SuccessResult(
+                "Support tickets retrieved successfully",
+                await QueryTicketsAsync(_context.SupportTickets.Where(st => st.IsActive), Paging.Normalize(pageNumber, pageSize)));
 
-                return BaseResponseDto<List<SupportTicketDto>>.SuccessResult("Support tickets retrieved successfully", tickets);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<SupportTicketDto>>.ErrorResult($"Error retrieving support tickets: {ex.Message}");
-            }
-        }
-
-        public async Task<BaseResponseDto<List<SupportTicketDto>>> GetUserSupportTicketsAsync(int userId, int pageNumber = 1, int pageSize = 10)
-        {
-            try
-            {
-                var tickets = await _context.SupportTickets
-                    .Where(st => st.UserId == userId && st.IsActive)
-                    .OrderByDescending(st => st.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(st => new SupportTicketDto
-                    {
-                        Id = st.Id,
-                        UserId = st.UserId,
-                        UserName = st.User.FirstName + " " + st.User.LastName,
-                        Subject = st.Subject,
-                        Description = st.Description,
-                        Category = st.Category,
-                        Priority = st.Priority,
-                        Status = st.Status,
-                        AssignedTo = st.AssignedTo,
-                        CreatedAt = st.CreatedAt,
-                        UpdatedAt = st.UpdatedAt,
-                        Messages = st.Messages
-                            .Where(m => m.IsActive)
-                            .Select(m => new SupportMessageDto
-                            {
-                                Id = m.Id,
-                                TicketId = m.TicketId,
-                                UserId = m.UserId,
-                                UserName = m.User.FirstName + " " + m.User.LastName,
-                                Message = m.Message,
-                                IsFromSupport = m.IsFromSupport,
-                                CreatedAt = m.CreatedAt
-                            })
-                            .ToList()
-                    })
-                    .ToListAsync();
-
-                return BaseResponseDto<List<SupportTicketDto>>.SuccessResult("Support tickets retrieved successfully", tickets);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<SupportTicketDto>>.ErrorResult($"Error retrieving support tickets: {ex.Message}");
-            }
-        }
+        public async Task<BaseResponseDto<List<SupportTicketDto>>> GetUserSupportTicketsAsync(int userId, int pageNumber = 1, int pageSize = 10) =>
+            BaseResponseDto<List<SupportTicketDto>>.SuccessResult(
+                "Support tickets retrieved successfully",
+                await QueryTicketsAsync(_context.SupportTickets.Where(st => st.UserId == userId && st.IsActive), Paging.Normalize(pageNumber, pageSize)));
 
         public async Task<BaseResponseDto<List<FaqDto>>> GetFaqsAsync(string? category = null, int pageNumber = 1, int pageSize = 10)
         {
-            try
-            {
-                var query = _context.Faqs
-                    .Where(f => f.IsPublished && f.IsActive);
+            var paging = Paging.Normalize(pageNumber, pageSize);
+            var query = _context.Faqs.AsNoTracking().Where(f => f.IsPublished && f.IsActive);
+            if (!string.IsNullOrEmpty(category))
+                query = query.Where(f => f.Category == category);
 
-                if (!string.IsNullOrEmpty(category))
+            var faqs = await query
+                .OrderByDescending(f => f.CreatedAt)
+                .ThenByDescending(f => f.Id)
+                .Skip(paging.Skip)
+                .Take(paging.PageSize)
+                .Select(f => new FaqDto
                 {
-                    query = query.Where(f => f.Category == category);
-                }
+                    Id = f.Id,
+                    Question = f.Question,
+                    Answer = f.Answer,
+                    Category = f.Category,
+                    ViewCount = f.ViewCount,
+                    IsPublished = f.IsPublished,
+                    CreatedAt = f.CreatedAt,
+                    UpdatedAt = f.UpdatedAt
+                })
+                .ToListAsync();
 
-                var faqs = await query
-                    .OrderByDescending(f => f.CreatedAt)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(f => new FaqDto
-                    {
-                        Id = f.Id,
-                        Question = f.Question,
-                        Answer = f.Answer,
-                        Category = f.Category,
-                        ViewCount = f.ViewCount,
-                        IsPublished = f.IsPublished,
-                        CreatedAt = f.CreatedAt,
-                        UpdatedAt = f.UpdatedAt
-                    })
-                    .ToListAsync();
-
-                return BaseResponseDto<List<FaqDto>>.SuccessResult("FAQs retrieved successfully", faqs);
-            }
-            catch (Exception ex)
-            {
-                return BaseResponseDto<List<FaqDto>>.ErrorResult($"Error retrieving FAQs: {ex.Message}");
-            }
+            return BaseResponseDto<List<FaqDto>>.SuccessResult("FAQs retrieved successfully", faqs);
         }
 
+        /// <summary>Kalıcı kayıt yok; yalnızca loglanır (§4.15).</summary>
         public Task<BaseResponseDto<string>> SubmitContactFormAsync(ContactFormDto contactFormDto)
         {
-            try
-            {
-                // TODO: Implement contact form submission logic
-                return Task.FromResult(BaseResponseDto<string>.SuccessResult("Contact form submitted successfully", "Thank you for your message. We will get back to you soon."));
-            }
-            catch (Exception ex)
-            {
-                return Task.FromResult(BaseResponseDto<string>.ErrorResult($"Error submitting contact form: {ex.Message}"));
-            }
+            _logger.LogInformation(
+                "Contact form received: category={Category}, subject={Subject}, email={Email}",
+                contactFormDto.Category, contactFormDto.Subject, contactFormDto.Email);
+
+            return Task.FromResult(BaseResponseDto<string>.SuccessResult("Contact form submitted successfully", ContactThanks));
         }
 
-        public Task<BaseResponseDto<HelpArticleDto>> UpdateHelpArticleAsync(int articleId, UpdateHelpArticleDto updateHelpArticleDto) =>
-            Task.FromResult(BaseResponseDto<HelpArticleDto>.ErrorResult("Not implemented yet"));
+        private static Task<List<SupportTicketDto>> QueryTicketsAsync(IQueryable<SupportTicket> query, Paging paging) =>
+            query
+                .AsNoTracking()
+                .OrderByDescending(st => st.CreatedAt)
+                .ThenByDescending(st => st.Id)
+                .Skip(paging.Skip)
+                .Take(paging.PageSize)
+                .Select(st => new SupportTicketDto
+                {
+                    Id = st.Id,
+                    UserId = st.UserId,
+                    UserName = st.User.FirstName + " " + st.User.LastName,
+                    Subject = st.Subject,
+                    Description = st.Description,
+                    Category = st.Category,
+                    Priority = st.Priority,
+                    Status = st.Status,
+                    AssignedTo = st.AssignedTo,
+                    CreatedAt = st.CreatedAt,
+                    UpdatedAt = st.UpdatedAt,
+                    Messages = st.Messages
+                        .Where(m => m.IsActive)
+                        .OrderBy(m => m.CreatedAt)
+                        .Select(m => new SupportMessageDto
+                        {
+                            Id = m.Id,
+                            TicketId = m.TicketId,
+                            UserId = m.UserId,
+                            UserName = m.User.FirstName + " " + m.User.LastName,
+                            Message = m.Message,
+                            IsFromSupport = m.IsFromSupport,
+                            CreatedAt = m.CreatedAt
+                        })
+                        .ToList()
+                })
+                .ToListAsync();
 
-        public Task<BaseResponseDto<string>> DeleteHelpArticleAsync(int articleId) =>
-            Task.FromResult(BaseResponseDto<string>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<List<HelpArticleDto>>> SearchHelpArticlesAsync(string searchTerm, int pageNumber = 1, int pageSize = 10) =>
-            Task.FromResult(BaseResponseDto<List<HelpArticleDto>>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<SupportTicketDto>> GetSupportTicketByIdAsync(int ticketId, int userId) =>
-            Task.FromResult(BaseResponseDto<SupportTicketDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<SupportTicketDto>> UpdateSupportTicketAsync(int ticketId, int userId, UpdateSupportTicketDto updateSupportTicketDto) =>
-            Task.FromResult(BaseResponseDto<SupportTicketDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<string>> CloseSupportTicketAsync(int ticketId, int userId) =>
-            Task.FromResult(BaseResponseDto<string>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<List<SupportMessageDto>>> GetSupportTicketMessagesAsync(int ticketId, int userId) =>
-            Task.FromResult(BaseResponseDto<List<SupportMessageDto>>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<SupportMessageDto>> AddSupportMessageAsync(int ticketId, int userId, CreateSupportMessageDto createSupportMessageDto) =>
-            Task.FromResult(BaseResponseDto<SupportMessageDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<FaqDto>> GetFaqByIdAsync(int faqId) =>
-            Task.FromResult(BaseResponseDto<FaqDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<FaqDto>> CreateFaqAsync(CreateFaqDto createFaqDto) =>
-            Task.FromResult(BaseResponseDto<FaqDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<FaqDto>> UpdateFaqAsync(int faqId, UpdateFaqDto updateFaqDto) =>
-            Task.FromResult(BaseResponseDto<FaqDto>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<string>> DeleteFaqAsync(int faqId) =>
-            Task.FromResult(BaseResponseDto<string>.ErrorResult("Not implemented yet"));
-
-        public Task<BaseResponseDto<object>> GetHelpSupportStatsAsync() =>
-            Task.FromResult(BaseResponseDto<object>.ErrorResult("Not implemented yet"));
+        /// <summary><c>Tags</c> virgülle ayrılmış saklanır.</summary>
+        private static HelpArticleDto ToDto(HelpArticle a) => new()
+        {
+            Id = a.Id,
+            Title = a.Title,
+            Content = a.Content,
+            Category = a.Category,
+            Tags = (a.Tags ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList(),
+            ViewCount = a.ViewCount,
+            IsPublished = a.IsPublished,
+            CreatedAt = a.CreatedAt,
+            UpdatedAt = a.UpdatedAt
+        };
     }
 }
