@@ -11,6 +11,9 @@ namespace EcommerceBackend.Application.Services
     public class AuthService : IAuthService
     {
         private const string InvalidCredentialsMessage = "Invalid email or password";
+        private const string LockedOutMessage = "Too many failed login attempts. Try again later.";
+        private const int MaxFailedAttempts = 5;
+        private static readonly TimeSpan LockoutWindow = TimeSpan.FromMinutes(15);
 
         private readonly ApplicationDbContext _context;
         private readonly IJwtService _jwtService;
@@ -32,6 +35,9 @@ namespace EcommerceBackend.Application.Services
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
             if (user == null)
                 return InvalidCredentials();
+
+            if (await IsLockedOutAsync(user.Id))
+                return BaseResponseDto<AuthResponseDto>.Fail(LockedOutMessage, ErrorCodes.RateLimited, 429);
 
             if (!user.IsActive || !VerifyPassword(loginRequest.Password, user.Password))
             {
@@ -95,6 +101,24 @@ namespace EcommerceBackend.Application.Services
             };
         }
 
+        /// <summary>
+        /// Kaba kuvvete karşı: pencere içindeki son <see cref="MaxFailedAttempts"/> denemenin hepsi başarısızsa kilitli.
+        /// Kilitliyken yapılan denemeler kaydedilmez, böylece kilit pencere dolunca kendiliğinden kalkar.
+        /// </summary>
+        private async Task<bool> IsLockedOutAsync(int userId)
+        {
+            var since = DateTime.UtcNow - LockoutWindow;
+            var recent = await _context.LoginHistories
+                .AsNoTracking()
+                .Where(h => h.UserId == userId && h.LoginAt >= since)
+                .OrderByDescending(h => h.LoginAt)
+                .Take(MaxFailedAttempts)
+                .Select(h => h.IsSuccessful)
+                .ToListAsync();
+
+            return recent.Count == MaxFailedAttempts && recent.All(successful => !successful);
+        }
+
         private static BaseResponseDto<AuthResponseDto> InvalidCredentials() =>
             BaseResponseDto<AuthResponseDto>.Fail(InvalidCredentialsMessage, ErrorCodes.InvalidCredentials, 401);
 
@@ -117,7 +141,7 @@ namespace EcommerceBackend.Application.Services
             string.IsNullOrEmpty(value) || value.Length <= maxLength ? value : value[..maxLength];
 
         public static string HashPassword(string password) =>
-            BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(10));
+            BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(12));
 
         public static bool VerifyPassword(string password, string hashedPassword)
         {

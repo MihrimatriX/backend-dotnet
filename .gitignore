@@ -499,3 +499,6 @@ Desktop.ini
 secrets.json
 *.secrets.json
 
+
+# Claude Code yerel çalışma alanı
+.claude/worktrees/

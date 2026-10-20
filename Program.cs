@@ -12,6 +12,7 @@ using Serilog;
 using Prometheus;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 var isSeedDemoForceCmd = args.Any(a => string.Equals(a, "seed-demo-force", StringComparison.OrdinalIgnoreCase));
@@ -122,13 +123,14 @@ builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("Application is healthy"))
     .AddEcommerceInfrastructureHealthChecks(builder.Configuration, redisConnection);
 
-// Health Checks UI
-builder.Services.AddHealthChecksUI(options =>
+// Reverse proxy arkasında gerçek istemci IP'si (hız limiti, giriş geçmişi). Varsayılan yalnızca loopback'e güvenir;
+// proxy başka bir host'taysa adresi ForwardedHeaders:KnownProxies listesine ekleyin.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.SetEvaluationTimeInSeconds(10);
-    options.MaximumHistoryEntriesPerEndpoint(100);
-    options.AddHealthCheckEndpoint("E-Commerce API", "/api/health");
-}).AddInMemoryStorage();
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var proxy in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+        options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+});
 
 // Repositories
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
@@ -170,6 +172,7 @@ builder.Services.AddApiJwtAuthentication(jwtOptions);
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseCorrelationId();
 app.UseMiddleware<RequestLoggingMiddleware>();
@@ -202,11 +205,6 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.MapHealthChecksUI(options =>
-{
-    options.UIPath = "/health-ui";
-});
 
 app.MapControllers();
 

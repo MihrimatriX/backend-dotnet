@@ -97,8 +97,7 @@ public static class ApiWebSetup
         || path.StartsWithSegments("/actuator", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/health", StringComparison.OrdinalIgnoreCase)
         || path.StartsWithSegments("/api/metrics", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/swagger", StringComparison.OrdinalIgnoreCase)
-        || path.StartsWithSegments("/health-ui", StringComparison.OrdinalIgnoreCase);
+        || path.StartsWithSegments("/swagger", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Gövdesiz 4xx/5xx cevapları (bilinmeyen rota, 405, 415 …) <c>/api/**</c> altında JSON zarfa çevirir.

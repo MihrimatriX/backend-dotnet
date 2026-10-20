@@ -24,7 +24,10 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
-RUN mkdir -p /app/logs
+RUN mkdir -p /app/logs && chown -R $APP_UID /app/logs
+
+# Resmî aspnet imajındaki yetkisiz kullanıcı (root yerine)
+USER $APP_UID
 
 EXPOSE 5000
 

@@ -8,3 +8,11 @@
 **/agent-tools
 **/.cursor
 **/temp-shop
+**/.claude
+**/tests
+**/docs
+**/scripts
+**/monitoring
+**/.github
+**/.env
+**/*.md

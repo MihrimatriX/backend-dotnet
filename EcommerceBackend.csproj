@@ -26,11 +26,9 @@
 
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
 
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
 
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
 
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
 
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.2" />
 
@@ -38,18 +36,13 @@
 
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
 
-    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
 
 
 
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
 
-    <PackageReference Include="AspNetCore.HealthChecks.UI" Version="9.0.0" />
 
-    <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
 
-    <!-- Overrides transitive 15.0.1 from HealthChecks.UI (NU1902 / GHSA-w7r3-mgwf-4mqq) -->
-    <PackageReference Include="KubernetesClient" Version="19.0.2" />
 
     <PackageReference Include="prometheus-net" Version="8.2.1" />
 
@@ -72,7 +65,6 @@
 
 
 
-    <PackageReference Include="AspNetCoreRateLimit" Version="5.0.0" />
 
 
 
