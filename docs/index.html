@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>backend-dotnet</title>
+<meta name="description" content="PazarKapısı demo e-ticaret sitesinin .NET 9 backend'i: ne işe yarıyor, nasıl kullanılıyor, nasıl geliştirildi.">
+<style>
+:root{
+  --bg:#f7f6f2;--surface:#fff;--text:#1f1e1b;--muted:#64625b;--border:#e4e2db;
+  --accent:#4b3fb5;--accent-bg:#ecebf9;--code:#f0eee8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151513;--surface:#1e1e1c;--text:#ecebe6;--muted:#a3a29b;--border:#33332f;
+    --accent:#a79ff0;--accent-bg:#26233f;--code:#2a2a27;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151513;--surface:#1e1e1c;--text:#ecebe6;--muted:#a3a29b;--border:#33332f;
+  --accent:#a79ff0;--accent-bg:#26233f;--code:#2a2a27;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:17px/1.7 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:48px 16px 96px}
+h1{font-size:2.1rem;line-height:1.2;margin:0 0 12px}
+h2{font-size:1.35rem;margin:56px 0 12px}
+h3{font-size:1.05rem;margin:28px 0 6px}
+p{margin:0 0 14px}
+.lead{font-size:1.12rem;color:var(--muted)}
+a{color:var(--accent)}
+code{font:.86em ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px;word-break:break-word}
+pre{background:var(--code);border-radius:8px;padding:14px 16px;overflow-x:auto;font:.86rem/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0 0 16px}
+pre code{background:none;padding:0}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0 0}
+nav a{font-size:.9rem;text-decoration:none;border:1px solid var(--border);background:var(--surface);padding:4px 12px;border-radius:999px;color:var(--text)}
+.table-wrap{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;width:100%;background:var(--surface);border:1px solid var(--border);font-size:.92rem}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 16px;font-size:.92rem}
+.flow span{background:var(--accent-bg);color:var(--accent);padding:3px 10px;border-radius:6px;font-weight:600}
+.flow i{color:var(--muted);font-style:normal}
+ol.timeline{list-style:none;padding:0;margin:0;border-left:2px solid var(--border)}
+ol.timeline li{position:relative;padding:0 0 18px 20px}
+ol.timeline li::before{content:"";position:absolute;left:-7px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--accent)}
+ol.timeline b{display:block;font-size:.85rem;color:var(--muted);font-weight:600}
+footer{color:var(--muted);font-size:.88rem;margin-top:64px;border-top:1px solid var(--border);padding-top:16px}
+</style>
+</head>
+<body>
+<main>
+  <h1>backend-dotnet</h1>
+  <p class="lead">PazarKapısı adlı demo e-ticaret sitesinin arka ucu. Ürünleri listeleyen, sepeti tutan, siparişi alan ve hesabı yöneten REST API burada, ASP.NET Core 9 ile yazıldı.</p>
+
+  <nav>
+    <a href="#ne">Ne işe yarıyor</a><a href="#kullanim">Nasıl kullanılır</a><a href="#kurallar">İçeride neler oluyor</a><a href="#gelistirme">Nasıl geliştirildi</a>
+  </nav>
+
+  <section id="ne">
+    <h2>Ne işe yarıyor</h2>
+    <p>Vitrin tarafı ayrı bir Next.js projesi (<a href="https://github.com/MihrimatriX/temp-shop-net">temp-shop-net</a>). Kullanıcı orada ürünlere bakar, sepete ekler, ödeme yapar, siparişini takip eder; bunların hepsi bu API'ye gelen isteklerdir. Yönetim paneli de aynı API'yi kullanır: siparişlerin durumunu değiştirmek, yorumları ve destek taleplerini görmek gibi işler için.</p>
+    <p>Projenin bir ikizi var. <a href="https://github.com/MihrimatriX/backend-spring">backend-spring</a> aynı işi Spring Boot ile yapıyor ve iki backend birebir aynı HTTP sözleşmesine uyuyor. Vitrin hangisine bağlanacağını tek bir ayardan seçiyor:</p>
+<pre><code>NEXT_PUBLIC_API_URL=http://localhost:5000   # .NET
+NEXT_PUBLIC_API_URL=http://localhost:8081   # Spring</code></pre>
+    <p>Rotalar, alan adları, hata kodları, sayfalama ve tarih biçimi iki tarafta da aynı. Sözleşmenin tamamı <a href="https://github.com/MihrimatriX/backend-dotnet/blob/main/docs/API_CONTRACT.md">docs/API_CONTRACT.md</a> dosyasında.</p>
+
+    <div class="table-wrap"><table>
+      <tr><th>Bölüm</th><th>Neler yapılabiliyor</th></tr>
+      <tr><td>Katalog</td><td>Ürün arama, filtreleme, fiyata göre sıralama, kategoriler, kampanyalar</td></tr>
+      <tr><td>Sepet ve sipariş</td><td>Sepete ekleme, ödeme, iptal, iade talebi, kargo takibi</td></tr>
+      <tr><td>Hesap</td><td>Adresler, kayıtlı kartlar, favoriler, bildirimler, güvenlik ve tercih ayarları</td></tr>
+      <tr><td>Yardım</td><td>SSS, yardım makaleleri, iletişim formu, destek talepleri</td></tr>
+      <tr><td>Yönetim</td><td>Ürün ve kategori düzenleme, sipariş durumları, yorum ve talep listeleri</td></tr>
+    </table></div>
+  </section>
+
+  <section id="kullanim">
+    <h2>Nasıl kullanılır</h2>
+    <h3>Bilgisayarında hızlıca denemek</h3>
+    <p>Hiçbir ek servis kurmana gerek yok. Geliştirme modunda veritabanı olarak bir SQLite dosyası, mesajlaşma için de bellek içi bir taşıyıcı kullanılıyor.</p>
+<pre><code>dotnet run --project EcommerceBackend.csproj
+# API:     http://localhost:5000
+# Swagger: http://localhost:5000/swagger</code></pre>
+    <p>Swagger sayfasından bütün uçları tarayıcıda deneyebilirsin. Daha dolu bir katalog istersen <code>dotnet run -- seed-demo</code> komutu örnek siparişler, yorumlar ve kartlar yükleyip çıkar.</p>
+
+    <h3>Gerçek servislerle çalıştırmak</h3>
+    <p>Docker Compose, API'yi PostgreSQL, Redis ve RabbitMQ ile birlikte ayağa kaldırıyor:</p>
+<pre><code>docker compose up --build -d</code></pre>
+
+    <h3>Demo hesapları</h3>
+    <p>Geliştirme ortamında uygulama açılırken şu hesaplar kendiliğinden oluşuyor. Üretim ortamında oluşturulmuyor.</p>
+    <div class="table-wrap"><table>
+      <tr><th>E-posta</th><th>Şifre</th><th>Rol</th></tr>
+      <tr><td>admin@example.com</td><td>admin123</td><td>Admin</td></tr>
+      <tr><td>manager@shop.demo</td><td>Manager123!</td><td>Admin</td></tr>
+      <tr><td>user1@example.com … user4@example.com</td><td>user123</td><td>Kullanıcı</td></tr>
+    </table></div>
+
+    <h3>Sözleşmeyi kontrol etmek</h3>
+    <p>Bu iş için tek bir script var. Kayıt olmaktan iade talebine kadar bütün alışveriş akışını gerçek HTTP istekleriyle yürütüyor ve yaklaşık 200 noktayı kontrol ediyor. İki backend'in çıktısını yan yana koyup farkları da listeleyebiliyor:</p>
+<pre><code>node scripts/contract-smoke.mjs run http://localhost:5000 out-dotnet.json
+node scripts/contract-smoke.mjs compare out-dotnet.json out-spring.json</code></pre>
+  </section>
+
+  <section id="kurallar">
+    <h2>İçeride neler oluyor</h2>
+    <p>Bir ürünün satış fiyatı, liste fiyatından indirim yüzdesi düşülerek bulunuyor ve iki basamağa yuvarlanıyor. Sepet de sipariş de bu fiyatı kullanıyor. Sepet 150 TL'nin altındaysa 34,99 TL kargo ekleniyor, üstündeyse kargo ücretsiz.</p>
+    <p>Sipariş verilirken sepetteki tutarla ödeme özetinin tutması gerekiyor. Stok, siparişle aynı veritabanı işleminde düşülüyor. İstemci bağlantı kopup aynı isteği tekrar gönderirse (<code>Idempotency-Key</code> başlığıyla), ikinci bir sipariş açılmıyor, ilki geri dönüyor.</p>
+    <p>Bir sipariş şu yolu izliyor:</p>
+    <div class="flow">
+      <span>Pending</span><i>→</i><span>Processing</span><i>→</i><span>Shipped</span><i>→</i><span>Delivered</span><i>→</i><span>ReturnRequested</span><i>→</i><span>Returned</span>
+    </div>
+    <p>Müşteri, sipariş kargoya verilmeden önce iptal edebiliyor; iptalde ve tamamlanan iadede stok geri ekleniyor. Her durum değişikliğinde kullanıcıya bir bildirim düşüyor. Demo ortamında gerçek bir kargo firması olmadığı için siparişi bir sonraki adıma geçiren bir uç da var.</p>
+    <p>Kart bilgisi olarak yalnızca son dört hane saklanıyor (<code>**** **** **** 1234</code>); tam kart numarası ve CVV hiç kaydedilmiyor.</p>
+    <p>Sipariş olayları önce veritabanındaki bir "outbox" tablosuna yazılıyor, arka planda çalışan bir işlem de bunları RabbitMQ'ya gönderiyor. Sipariş kaydedilip mesaj kaybolursa ya da tersi olursa tutarsızlık çıkacağı için iki kayıt aynı işlemde yapılıyor.</p>
+  </section>
+
+  <section id="gelistirme">
+    <h2>Nasıl geliştirildi</h2>
+    <p>Proje tek bir .NET projesi olarak duruyor ve klasörlere bölünmüş: <code>Domain</code> veritabanı tablolarına karşılık gelen sınıfları, <code>Application</code> iş kurallarını, <code>Infrastructure</code> da veritabanı, mesajlaşma ve HTTP katmanını tutuyor. Geliştirmede SQLite, üretimde PostgreSQL kullanılıyor; şema değişiklikleri EF Core migration'larıyla yönetiliyor.</p>
+    <ol class="timeline">
+      <li><b>Ekim 2025</b>İlk veritabanı şeması kuruldu: ürünler, kategoriler, kullanıcılar, siparişler. Ertesi gün alt kategoriler eklendi.</li>
+      <li><b>Nisan 2026</b>Sepet için ayrı bir tablo açıldı ve ödeme yöntemi kolonları genişletildi. Birkaç gün sonra sipariş olayları için outbox tablosu geldi.</li>
+      <li><b>2 Ekim 2026</b>Spring ikiziyle ortak API sözleşmesi ve onu doğrulayan test script'i yazıldı. Kodun sözleşmeye uyarlanmasına başlandı.</li>
+      <li><b>20 Ekim 2026</b>Uyarlama tamamlandı: son dört modül de sözleşmeye geçirildi, eksik migration eklendi, güvenlik ayarları kalıcı hale geldi, "tüm cihazlardan çıkış" token'ları gerçekten iptal etmeye başladı. Sözleşme testi 202 kontrolün hepsinden geçiyor.</li>
+    </ol>
+
+    <h3>Test nasıl yapılıyor</h3>
+    <p>Entegrasyon testleri gerçek PostgreSQL, Redis ve RabbitMQ ile çalışıyor; bunları Testcontainers test sırasında Docker'da açıp kapatıyor. GitHub'a gönderilen her değişiklikte CI sırayla dört şey yapıyor: projeyi derliyor, bu testleri koşuyor, bekleyen bir migration kalıp kalmadığına bakıyor ve uygulamayı başlatıp sözleşme testini çalıştırıyor.</p>
+
+    <h3>Güvenlik tarafında</h3>
+    <p>Giriş JWT ile yapılıyor ve token 24 saat geçerli. Aynı hesaba 15 dakika içinde art arda 5 hatalı giriş denemesi gelirse hesap bir süre kilitleniyor. Şifre değiştiğinde eski token'lar geçersiz oluyor. Üretim ayar dosyasında hiçbir şifre ya da anahtar yok; uygulama, repodaki örnek anahtarla üretimde açılmayı reddediyor.</p>
+  </section>
+
+  <footer>
+    Kaynak kod: <a href="https://github.com/MihrimatriX/backend-dotnet">github.com/MihrimatriX/backend-dotnet</a> · Spring ikizi: <a href="https://github.com/MihrimatriX/backend-spring">backend-spring</a> · Vitrin: <a href="https://github.com/MihrimatriX/temp-shop-net">temp-shop-net</a>
+  </footer>
+</main>
+</body>
+</html>
