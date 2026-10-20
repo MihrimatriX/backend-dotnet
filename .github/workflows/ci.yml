@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build EcommerceBackend.sln -c Release
+
+      # Testcontainers: Postgres, Redis, RabbitMQ (runner'da Docker hazır)
+      - name: Integration tests
+        run: dotnet test EcommerceBackend.sln -c Release --no-build
+
+      - name: Pending migration check
+        run: |
+          dotnet tool restore
+          dotnet ef migrations has-pending-model-changes --project EcommerceBackend.csproj
+
+      - name: Contract smoke (SQLite, Development)
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://localhost:5000
+          ConnectionStrings__DefaultConnection: Data Source=/tmp/smoke.db
+        run: |
+          dotnet run --project EcommerceBackend.csproj -c Release --no-build --no-launch-profile > /tmp/app.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5000/health && break; sleep 2; done
+          node scripts/contract-smoke.mjs run http://localhost:5000 /tmp/out-dotnet.json || { tail -50 /tmp/app.log; exit 1; }

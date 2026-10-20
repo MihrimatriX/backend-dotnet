@@ -119,7 +119,8 @@ public class SubCategoryService : ISubCategoryService
 
     public async Task<BaseResponseDto<bool>> DeleteSubCategoryAsync(int id)
     {
-        var subCategory = await _context.SubCategories.FirstOrDefaultAsync(sc => sc.Id == id && sc.IsActive);
+        // Önceden pasife alınmış kayıt da silinebilir (§4.4: DELETE → 200); yalnızca hiç olmayan id 404.
+        var subCategory = await _context.SubCategories.FirstOrDefaultAsync(sc => sc.Id == id);
         if (subCategory == null)
             return SubCategoryNotFound<bool>();
 

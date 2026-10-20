@@ -62,9 +62,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("full_address");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsDefault")
@@ -152,9 +150,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("image_url");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<DateTime>("StartDate")
@@ -201,9 +197,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<int>("ProductId")
@@ -265,9 +259,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("image_url");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -311,15 +303,11 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsPublished")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_published");
 
                     b.Property<string>("Question")
@@ -361,9 +349,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<int>("ProductId")
@@ -417,15 +403,11 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsPublished")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_published");
 
                     b.Property<string>("Tags")
@@ -482,15 +464,11 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("ip_address");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsSuccessful")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_successful");
 
                     b.Property<string>("Location")
@@ -545,9 +523,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsRead")
@@ -608,6 +584,16 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("billing_address_id");
 
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<string>("Carrier")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("carrier");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -617,10 +603,17 @@ namespace EcommerceBackend.Migrations
                     b.Property<DateTime?>("DeliveredAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EstimatedDeliveryAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("estimated_delivery_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<string>("Notes")
@@ -634,6 +627,15 @@ namespace EcommerceBackend.Migrations
 
                     b.Property<int?>("PaymentMethodId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ReturnReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("return_reason");
+
+                    b.Property<DateTime?>("ReturnRequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("return_requested_at");
 
                     b.Property<DateTime?>("ShippedAt")
                         .HasColumnType("timestamp with time zone");
@@ -652,6 +654,11 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("decimal(12,2)")
                         .HasColumnName("total_amount");
 
+                    b.Property<string>("TrackingNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("tracking_number");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -669,7 +676,8 @@ namespace EcommerceBackend.Migrations
 
                     b.HasIndex("PaymentMethodId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique();
 
                     b.ToTable("orders", (string)null);
                 });
@@ -696,9 +704,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("discount");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<int>("OrderId")
@@ -754,9 +760,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<string>("LastError")
@@ -838,11 +842,6 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-                    b.Property<string>("Cvv")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("cvv");
-
                     b.Property<int>("ExpiryMonth")
                         .HasColumnType("integer")
                         .HasColumnName("expiry_month");
@@ -852,9 +851,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("expiry_year");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsDefault")
@@ -896,21 +893,15 @@ namespace EcommerceBackend.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<bool>("AllowAnalytics")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("allow_analytics");
 
                     b.Property<bool>("AllowCookies")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("allow_cookies");
 
                     b.Property<bool>("AllowDataCollection")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("allow_data_collection");
 
                     b.Property<bool>("AllowMarketing")
@@ -932,15 +923,11 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("data_sharing");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("ProfileVisibility")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("profile_visibility");
 
                     b.Property<bool>("ShowEmail")
@@ -1007,9 +994,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("image_url");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<string>("ProductName")
@@ -1029,6 +1014,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("sub_category_id");
 
                     b.Property<int>("UnitInStock")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("unit_in_stock");
 
@@ -1072,9 +1058,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsHelpful")
@@ -1121,6 +1105,63 @@ namespace EcommerceBackend.Migrations
                     b.ToTable("reviews", (string)null);
                 });
 
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.SecuritySettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<bool>("EmailNotifications")
+                        .HasColumnType("boolean")
+                        .HasColumnName("email_notifications");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("LoginAlerts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("login_alerts");
+
+                    b.Property<int>("SessionTimeout")
+                        .HasColumnType("integer")
+                        .HasColumnName("session_timeout");
+
+                    b.Property<bool>("SmsNotifications")
+                        .HasColumnType("boolean")
+                        .HasColumnName("sms_notifications");
+
+                    b.Property<bool>("TwoFactorRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("two_factor_required");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("security_settings", (string)null);
+                });
+
             modelBuilder.Entity("EcommerceBackend.Domain.Entities.SubCategory", b =>
                 {
                     b.Property<int>("Id")
@@ -1151,9 +1192,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("image_url");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<string>("SubCategoryName")
@@ -1194,9 +1233,7 @@ namespace EcommerceBackend.Migrations
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsFromSupport")
@@ -1267,9 +1304,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("description");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<string>("Priority")
@@ -1343,9 +1378,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("first_name");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<bool>("IsEmailVerified")
@@ -1375,6 +1408,15 @@ namespace EcommerceBackend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("postal_code");
 
+                    b.Property<string>("RevokeExceptJti")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("revoke_except_jti");
+
+                    b.Property<DateTime?>("TokensRevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("tokens_revoked_at");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -1399,9 +1441,7 @@ namespace EcommerceBackend.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<bool>("AutoSaveCart")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("auto_save_cart");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1417,9 +1457,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("currency");
 
                     b.Property<bool>("EmailNotifications")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("email_notifications");
 
                     b.Property<bool>("EnableLocationServices")
@@ -1429,15 +1467,11 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("enable_location_services");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
                     b.Property<int>("ItemsPerPage")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasDefaultValue(20)
                         .HasColumnName("items_per_page");
 
                     b.Property<string>("Language")
@@ -1453,27 +1487,19 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("marketing_emails");
 
                     b.Property<bool>("OrderUpdates")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("order_updates");
 
                     b.Property<bool>("PriceAlerts")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("price_alerts");
 
                     b.Property<bool>("PushNotifications")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("push_notifications");
 
                     b.Property<bool>("ShowProductRecommendations")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("show_product_recommendations");
 
                     b.Property<bool>("SmsNotifications")
@@ -1483,9 +1509,7 @@ namespace EcommerceBackend.Migrations
                         .HasColumnName("sms_notifications");
 
                     b.Property<bool>("StockNotifications")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
                         .HasColumnName("stock_notifications");
 
                     b.Property<string>("Theme")
@@ -1679,6 +1703,17 @@ namespace EcommerceBackend.Migrations
                         .IsRequired();
 
                     b.Navigation("Product");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("EcommerceBackend.Domain.Entities.SecuritySettings", b =>
+                {
+                    b.HasOne("EcommerceBackend.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

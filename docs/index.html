@@ -61,20 +61,35 @@ footer{color:var(--muted);font-size:.85rem;margin-top:56px}
   <p class="sub">.NET 9 e-ticaret API'si · İncelenen sürüm: <code>main</code> @ <code>92b05ed</code> · 20 Ekim 2026</p>
 
   <nav>
-    <a href="#ozet">Özet</a><a href="#build">Build</a><a href="#eksik">Eksikler</a>
+    <a href="#durum">Güncel durum</a><a href="#ozet">İlk inceleme</a><a href="#build">Build</a><a href="#eksik">Eksikler</a>
     <a href="#fazla">Fazlalar</a><a href="#guvenlik">Güvenlik</a><a href="#readme">README</a><a href="#yol">Yol haritası</a>
   </nav>
 
-  <section id="ozet">
+  <section id="durum">
+    <h2 style="border-top:0;margin-top:24px">Güncel durum — düzeltmeler uygulandı</h2>
     <div class="stats">
-      <div class="stat"><b>102</b><span>derleme hatası</span></div>
-      <div class="stat"><b>4 / 16</b><span>modül sözleşmeye taşınmamış</span></div>
-      <div class="stat"><b>1</b><span>eksik EF migration</span></div>
-      <div class="stat"><b>0</b><span>CI workflow / unit test</span></div>
-      <div class="stat"><b>2 / 3</b><span>kritik güvenlik açığı giderildi</span></div>
+      <div class="stat"><b>0</b><span>derleme hatası (önce 102)</span></div>
+      <div class="stat"><b>202 / 202</b><span>sözleşme smoke kontrolü geçti</span></div>
+      <div class="stat"><b>16 / 16</b><span>modül sözleşmeye uyumlu</span></div>
+      <div class="stat"><b>1</b><span>CI workflow</span></div>
     </div>
-    <p>Mimari doğru yöne gidiyor: ortak bir API sözleşmesi (<code>docs/API_CONTRACT.md</code>), tek tip yanıt zarfı, hata kodları, outbox üzerinden mesajlaşma ve Testcontainers ile çalışan entegrasyon testleri var. Sorun şu: son WIP commit'i <code>main</code>'e yarım haliyle birleştirildi ve proje <strong>şu an derlenmiyor</strong>. Derlense bile, eksik migration yüzünden Postgres'te çalışma anında hata verir.</p>
-    <div class="callout"><strong>Giderildi:</strong> Önceden her ortamda bilinen şifreli admin hesapları oluşturuluyordu ve JWT imza anahtarı repoya commit'lenmişti. Artık seed üretimde çalışmıyor, üretim yapılandırmasındaki secret'lar boşaltıldı ve uygulama, örnek anahtarla üretimde açılmayı reddediyor. Anahtar git geçmişinde hâlâ duruyor; canlı bir ortam varsa o ortamın anahtarı mutlaka değiştirilmeli.</div>
+    <ul class="items">
+      <li><span class="tag g">Yapıldı</span>Review, Security, Settings ve HelpSupport modülleri sözleşmeye taşındı. Security ayarları artık kalıcı (yeni <code>security_settings</code> tablosu); <code>logout-all-devices</code> ve şifre değişikliği eski token'ları gerçekten iptal ediyor; settings upsert/import/export çalışıyor; review <code>isVerified</code> siparişlerden hesaplanıyor; makale <code>tags</code> dolu.</li>
+      <li><span class="tag g">Yapıldı</span><code>ContractAlignment</code> migration'ı eklendi. Bekleyen model değişikliği yok; <code>dotnet-ef</code> artık tool manifest'inde.</li>
+      <li><span class="tag g">Yapıldı</span>İncelemede fark edilmeyen bir hata bulundu ve düzeltildi: <code>HasDefaultValue(true)</code> yüzünden EF, <code>false</code> değerlerini INSERT'te hiç göndermiyordu. Bu nedenle başarısız girişler başarılı diye kaydediliyor, pasif oluşturulan kayıtlar aktif oluyor ve kapatılan bildirim ayarları açık kalıyordu.</li>
+      <li><span class="tag g">Yapıldı</span>Güvenlik: üretimde seed çalışmıyor; secret'lar prod config'ten çıkarıldı; örnek JWT anahtarıyla açılış engellendi; 5 hatalı girişte 15 dakikalık kilit; BCrypt 12; ForwardedHeaders; container root olmayan kullanıcıyla çalışıyor.</li>
+      <li><span class="tag g">Yapıldı</span>Outbox: 10 denemede dead-letter, bilinmeyen tipler hemen ayrılıyor, <code>Type.GetType</code> kaldırıldı (yalnızca beyaz liste).</li>
+      <li><span class="tag g">Yapıldı</span>Temizlik: 7 kullanılmayan paket, HealthChecks UI, kullanılmayan publisher, ölü rate-limit config kaldırıldı. <code>SubCategoryController</code> doğru klasöre taşındı. README baştan yazıldı.</li>
+      <li><span class="tag g">Yapıldı</span>Smoke testin bulduğu 4 hata düzeltildi: SQLite'ta fiyat sıralaması 500 veriyordu; dev'de demo lojistik kapalıydı; pasif alt kategori silinemiyordu; Redis yokken health 503 dönüyordu.</li>
+      <li><span class="tag o">Açık</span>Entegrasyon testleri yalnızca CI'da çalışıyor (yerelde Docker gerekiyor). Eski JWT anahtarı git geçmişinde; canlı ortam varsa değiştirilmeli. Outbox'ta satır kilidi yok, tek instance varsayılıyor.</li>
+      <li><span class="tag d">Bilinçli bırakıldı</span>Health, metrics ve test uçları sözleşmenin §4.16 bölümünde zorunlu tutulduğu için kaldı. Repository katmanı ile tek implementasyonlu arayüzler davranışı etkilemiyor; büyük bir refactor gerektirdiği için ayrı bir iş olarak bırakıldı.</li>
+    </ul>
+  </section>
+
+  <section id="ozet">
+    <h2>İlk inceleme (92b05ed)</h2>
+    <p>Aşağıdaki bulgular düzeltmelerden önceki durumu anlatıyor; yukarıda "Yapıldı" olarak işaretlenenler giderildi.</p>
+    <p>Mimari doğru yöne gidiyordu: ortak bir API sözleşmesi (<code>docs/API_CONTRACT.md</code>), tek tip yanıt zarfı, hata kodları, outbox üzerinden mesajlaşma ve Testcontainers ile çalışan entegrasyon testleri vardı. Ancak son WIP commit'i <code>main</code>'e yarım haliyle birleştirilmişti ve proje <strong>derlenmiyordu</strong>.</p>
   </section>
 
   <section id="build">
